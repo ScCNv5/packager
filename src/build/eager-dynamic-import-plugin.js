@@ -4,8 +4,13 @@ const patchParser = (parser) => {
   const originalParseCommentOptions = parser.parseCommentOptions;
   parser.parseCommentOptions = function (...args) {
     const result = originalParseCommentOptions.call(this, ...args);
-    result.options.webpackMode = 'eager';
-    return result;
+    return {
+      ...result,
+      options: {
+        ...(result.options || {}),
+        webpackMode: 'eager'
+      }
+    };
   };
 };
 

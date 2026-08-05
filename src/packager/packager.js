@@ -12,6 +12,7 @@ import {OutdatedPackagerError} from '../common/errors';
 import {darken} from './colors';
 import {Adapter} from './adapter';
 import encodeBigString from './encode-big-string';
+import compileProject from './compile-project';
 
 const PROGRESS_LOADED_SCRIPTS = 0.1;
 
@@ -186,6 +187,9 @@ class Packager extends EventTarget {
     this.options = Packager.DEFAULT_OPTIONS();
     this.aborted = false;
     this.used = false;
+    // Functions and provider credentials belong here rather than in serializable UI options.
+    this.compiledProjectHooks = {};
+    this.compiledProjectRuntime = null;
   }
 
   abort () {
@@ -284,6 +288,38 @@ class Packager extends EventTarget {
       texts.push(await this.fetchLargeAsset('addons', 'text'));
     }
     this.script = texts.join('\n').replace(/<\/script>/g,"</scri'+'pt>");
+  }
+
+  async prepareCompiledProject () {
+    const aot = this.options.compiler.aot;
+    if (!aot || !aot.enabled) return;
+    this.dispatchEvent(new CustomEvent('compile-progress', {detail: {progress: 0}}));
+    const result = await compileProject(
+      this.project.arrayBuffer,
+      this.options.compiler,
+      this.compiledProjectHooks
+    );
+    if (this.compiledProjectHooks.signManifest && !this.compiledProjectHooks.signatureVerifierSource) {
+      throw new Error('Signed compiled projects require compiledProjectHooks.signatureVerifierSource');
+    }
+    this.ensureNotAborted();
+    this.project = {
+      ...this.project,
+      arrayBuffer: result.packageData,
+      type: 'sb3c'
+    };
+    this.compiledProjectRuntime = {
+      accessorSource: result.accessorSidecar ? result.accessorSidecar.content : null,
+      bindingName: result.accessorSidecar ? result.accessorSidecar.bindingName : null,
+      signed: Boolean(this.compiledProjectHooks.signManifest),
+      signatureVerifierSource: this.compiledProjectHooks.signatureVerifierSource || null,
+      runtimeScripts: result.sidecars
+        .filter(sidecar => sidecar.execution === 'global-script')
+        .map(sidecar => ({name: sidecar.name, content: sidecar.content}))
+    };
+    this.dispatchEvent(new CustomEvent('compile-progress', {
+      detail: {progress: 1, diagnostics: result.diagnostics}
+    }));
   }
 
   computeWindowSize () {
@@ -1078,7 +1114,8 @@ cd "$(dirname "$0")"
       }`;
     } else {
       let src;
-      if (this.project.type === 'blob' || this.options.target === 'zip-one-asset') {
+      if (this.project.type === 'blob' || this.project.type === 'sb3c' ||
+          this.options.target === 'zip-one-asset') {
         isZip = this.project.type !== 'blob';
         src = './project.zip';
         storageProgressStart = PROGRESS_FETCHED_COMPRESSED;
@@ -1146,7 +1183,7 @@ cd "$(dirname "$0")"
           if (!file) {
             throw new Error('project.json is not in zip');
           }
-          return file.async('arraybuffer');
+          ${this.project.type === 'sb3c' ? 'return data;' : "return file.async('arraybuffer');"}
         });` : `
         storage.addWebStore(
           [
@@ -1240,6 +1277,8 @@ cd "$(dirname "$0")"
       throw new Error('Packager was already used');
     }
     this.used = true;
+    this.ensureNotAborted();
+    await this.prepareCompiledProject();
     this.ensureNotAborted();
     await this.loadResources();
     this.ensureNotAborted();
@@ -1660,10 +1699,28 @@ cd "$(dirname "$0")"
     }
   </script>` : ''}
   ${await this.generateGetProjectData()}
+  ${this.project.type === 'sb3c' ? this.compiledProjectRuntime.runtimeScripts
+    .map(script => `<script data-sb3c-runtime=${JSON.stringify(script.name)}>${
+      script.content.replace(/<\/script>/gi, "</scri'+'pt>")
+    }</script>`)
+    .join('\n') : ''}
   <script>
     const run = async () => {
       const projectData = await getProjectData();
-      await scaffolding.loadProject(projectData);
+      ${this.project.type === 'sb3c' ? `
+      let bindings = {};
+      ${this.compiledProjectRuntime.accessorSource ? `
+      const accessorModule = await import(${JSON.stringify(
+        `data:text/javascript;charset=utf-8,${encodeURIComponent(this.compiledProjectRuntime.accessorSource)}`
+      )});
+      bindings = {[accessorModule.bindingName]: accessorModule.accessor};` : ''}
+      await scaffolding.loadCompiledProjectPackage(projectData, {
+        bindings,
+        requireIntegrity: true,
+        requireSignature: ${this.compiledProjectRuntime.signed},
+        ${this.compiledProjectRuntime.signatureVerifierSource ?
+          `verifyIntegritySignature: (${this.compiledProjectRuntime.signatureVerifierSource})` : ''}
+      });` : 'await scaffolding.loadProject(projectData);'}
       setProgress(1);
       loadingScreen.hidden = true;
       if (${this.options.autoplay}) {
@@ -1757,7 +1814,8 @@ Packager.usesUnsafeOptions = (options) => {
   const getUnsafeOptions = (options) => [
     options.custom,
     options.extensions,
-    options.cloudVariables.unsafeCloudBehaviors
+    options.cloudVariables.unsafeCloudBehaviors,
+    options.compiler.aot.javascriptObfuscatorOptions.debugProtection
   ];
   return JSON.stringify(getUnsafeOptions(defaultOptions)) !== JSON.stringify(getUnsafeOptions(options));
 };
@@ -1813,7 +1871,36 @@ Packager.DEFAULT_OPTIONS = () => ({
   },
   compiler: {
     enabled: true,
-    warpTimer: false
+    warpTimer: false,
+    aot: {
+      enabled: false,
+      obfuscate: true,
+      javascriptObfuscator: false,
+      shortIds: true,
+      accessorName: '__vmAccess',
+      seed: '',
+      javascriptObfuscatorOptions: {
+        compact: true,
+        controlFlowFlattening: false,
+        controlFlowFlatteningThreshold: 0.75,
+        deadCodeInjection: false,
+        deadCodeInjectionThreshold: 0.4,
+        debugProtection: false,
+        debugProtectionInterval: 0,
+        disableConsoleOutput: false,
+        identifierNamesGenerator: 'hexadecimal',
+        numbersToExpressions: false,
+        selfDefending: false,
+        simplify: true,
+        splitStrings: false,
+        splitStringsChunkLength: 10,
+        stringArray: true,
+        stringArrayEncoding: 'none',
+        stringArrayThreshold: 0.75,
+        transformObjectKeys: false,
+        unicodeEscapeSequence: false
+      }
+    }
   },
   packagedRuntime: true,
   target: 'html',

@@ -14,6 +14,70 @@ const base = {
 };
 const dist = path.resolve(__dirname, 'dist');
 const buildId = isProduction ? require('./src/build/generate-scaffolding-build-id') : null;
+const nodeCompatibilityAliases = {
+  'node:crypto': require.resolve('crypto-browserify'),
+  'node:buffer': require.resolve('buffer/'),
+  // The GitHub package exports ESM but its current package metadata has no
+  // Webpack 4-compatible main/module field.
+  'sb3c-vm-obfuscator$': path.resolve(__dirname, 'node_modules', 'sb3c-vm-obfuscator', 'src', 'index.mjs'),
+  // Use the self-contained browser distribution in both targets. The Node
+  // entry pulls in ESM dependencies which Webpack 4 cannot parse directly.
+  'javascript-obfuscator$': path.resolve(__dirname, 'node_modules', 'javascript-obfuscator', 'dist', 'index.browser.js')
+};
+const compiledProjectJavaScriptRules = [
+  {
+    // Webpack 4 treats .mjs as strict ESM and otherwise rejects named imports
+    // from CommonJS dependencies used by Babel's AST packages.
+    test: /\.mjs$/,
+    include: /node_modules/,
+    type: 'javascript/auto'
+  },
+  {
+    test: /\.(?:mjs|js)$/,
+    loader: 'babel-loader',
+    include: [/node_modules[\\/]scratch-[^\\/]+[\\/]src/],
+    options: {
+      babelrc: false,
+      presets: ['@babel/preset-env']
+    }
+  },
+  {
+    test: /\.mjs$/,
+    type: 'javascript/auto',
+    loader: 'babel-loader',
+    include: [/node_modules[\\/]sb3c-vm-obfuscator[\\/]src/],
+    options: {
+      babelrc: false,
+      // javascript/auto enables CJS named-import interop for Babel's parser
+      // packages while preserving ESM so Webpack can bundle relative modules.
+      presets: [['@babel/preset-env', {modules: false}]]
+    }
+  },
+  {
+    test: /javascript-obfuscator[\\/]dist[\\/]index\.browser\.js$/,
+    type: 'javascript/auto',
+    use: [
+      {
+        loader: 'babel-loader',
+        options: {
+          babelrc: false,
+          presets: [['@babel/preset-env', {modules: false}]]
+        }
+      },
+      {
+        // Its UMD wrapper assumes a browser global named `self`.
+        loader: path.resolve(__dirname, 'src', 'build', 'global-self-loader.js')
+      }
+    ]
+  }
+];
+const compiledProjectAudioRule = {
+  test: /\.(?:mp3|wav)$/i,
+  use: [{
+    // The compiler only needs extension block definitions, not sample bytes.
+    loader: path.resolve(__dirname, 'src', 'build', 'noop-loader.js')
+  }]
+};
 
 const getVersion = () => {
   if (process.env.VERSION) {
@@ -140,7 +204,8 @@ const makeWebsite = () => ({
   },
   resolve: {
     alias: {
-      svelte: path.resolve('node_modules', 'svelte')
+      svelte: path.resolve('node_modules', 'svelte'),
+      ...nodeCompatibilityAliases
     },
     extensions: ['.mjs', '.js', '.svelte'],
     mainFields: ['svelte', 'browser', 'module', 'main']
@@ -153,6 +218,8 @@ const makeWebsite = () => ({
   },
   module: {
     rules: [
+      ...compiledProjectJavaScriptRules,
+      compiledProjectAudioRule,
       {
         test: /\.png|\.svg$/i,
         use: isStandalone ? {
@@ -219,6 +286,10 @@ const makeNode = () => ({
   entry: {
     packager: './src/packager/node/export.js'
   },
+  resolve: {
+    alias: nodeCompatibilityAliases,
+    extensions: ['.mjs', '.js']
+  },
   externals: {
     '@turbowarp/jszip': '@turbowarp/jszip',
     '@turbowarp/sbdl': '@turbowarp/sbdl',
@@ -228,6 +299,8 @@ const makeNode = () => ({
   },
   module: {
     rules: [
+      ...compiledProjectJavaScriptRules,
+      compiledProjectAudioRule,
       {
         test: /\.png|\.svg$/i,
         use: 'file-loader'

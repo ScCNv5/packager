@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// You should use require('@turbowarp/packager') instead
+// You should use require('@luyifei2011/tw-packager') instead
 // We use a strange require() in this demo because we use this to test the API internally
 const Packager = require('../dist/packager');
 

@@ -1,8 +1,14 @@
-# TurboWarp Packager
+# SB3C Packager
 
-https://packager.turbowarp.org/
+An independent modified version of [TurboWarp Packager](https://github.com/TurboWarp/packager), focused on ahead-of-time compiled `.sb3c` projects, VM-access protection, reproducible JavaScript obfuscation, and package integrity verification.
+
+Source: https://github.com/LuYifei2011/tw-packager
+
+Website: https://luyifei2011.github.io/tw-packager/
 
 Converts Scratch projects into HTML files, zip archives, or executable programs for Windows, macOS, and Linux.
+
+Compilation and obfuscation are not encryption or DRM. They can make casual inspection, copying, and automated analysis more expensive, but the player must still receive executable JavaScript. A determined user can inspect, instrument, or modify it, so projects must never contain private keys, long-term secrets, or client-side security decisions.
 
 ## Development
 
@@ -57,6 +63,8 @@ Note that npm is a very buggy piece of software and our dependency tree is very 
 
 The packager is deployed as a simple static website. You can host it anywhere by just copying the `dist` folder after a build.
 
+This fork includes `.github/workflows/deploy.yml` for GitHub Pages. In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. A push to `master`, or a manual run of “Deploy to GitHub Pages”, will test the project, build the production website and standalone version, upload the Pages artifact, and deploy it to `https://luyifei2011.github.io/tw-packager/`.
+
 We use GitHub Actions and GitHub Pages to manage our deployment. If you want to do this too:
 
  - Fork the repository on GitHub and push your changes.
@@ -103,6 +111,8 @@ npm run build-node-prod
 
 <!-- Make sure to also update COPYRIGHT_NOTICE in src/packager/brand.js -->
 
-Copyright (C) 2021-2024 Thomas Weber
+SB3C Packager modifications Copyright (C) 2026 SB3C Packager contributors
+
+Based on TurboWarp Packager, Copyright (C) 2021-2024 Thomas Weber
 
 This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.

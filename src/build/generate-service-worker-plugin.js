@@ -27,7 +27,7 @@ class GenerateServiceWorkerPlugin {
       const workerSource = workerFile.source.source().toString();
       const newSource = workerSource
         .replace('__IS_PRODUCTION__', JSON.stringify(process.env.NODE_ENV === 'production'))
-        .replace('[/* __ASSETS__ */]', stringifiedAssets)
+        .replace(/["']__ASSETS__["']/, stringifiedAssets)
         .replace('__CACHE_NAME__', JSON.stringify(`p4-${hash}`));
       compilation.updateAsset(SW_NAME, new RawSource(newSource));
     });

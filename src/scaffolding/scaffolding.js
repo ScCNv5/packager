@@ -468,6 +468,20 @@ class Scaffolding extends EventTarget {
       });
   }
 
+  loadCompiledProjectPackage (data, options) {
+    if (typeof this.vm.loadCompiledProjectPackage !== 'function') {
+      return Promise.reject(new Error('This Scratch VM does not support compiled project packages'));
+    }
+    return this.vm.loadCompiledProjectPackage(data, options)
+      .then(() => {
+        this.vm.setCloudProvider(this.cloudManager);
+        this.cloudManager.projectReady();
+        this.renderer.draw();
+        setTimeout(() => this.renderer.draw());
+        if (this.shouldConnectPeripherals) this._connectPeripherals();
+      });
+  }
+
   setUsername (username) {
     this._username = username;
     this.vm.postIOData('userData', {

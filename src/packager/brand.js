@@ -30,23 +30,25 @@ If this is set to an empty string, the link is removed.
 */
 
 module.exports = {
-  APP_NAME: 'TurboWarp Packager',
-  WEBSITE: 'https://packager.turbowarp.org/',
-  COPYRIGHT_NOTICE: `Copyright (C) 2021-2024 Thomas Weber
+  APP_NAME: 'SB3C Packager',
+  WEBSITE: 'https://luyifei2011.github.io/tw-packager/',
+  COPYRIGHT_NOTICE: `SB3C Packager modifications Copyright (C) 2026 SB3C Packager contributors
+
+Based on TurboWarp Packager, Copyright (C) 2021-2024 Thomas Weber
 
 The Source Code Form of this program is available under the terms of the
 Mozilla Public License, v. 2.0. You can obtain a copy of the license at
 https://www.mozilla.org/en-US/MPL/2.0/.`,
   ACCENT_COLOR: '#ff4c4c',
-  SOURCE_CODE: 'https://github.com/TurboWarp/packager',
+  SOURCE_CODE: 'https://github.com/LuYifei2011/tw-packager',
   FEEDBACK_PRIMARY: {
-    name: 'Scratch',
-    link: 'https://scratch.mit.edu/users/GarboMuffin/#comments'
+    name: 'GitHub',
+    link: 'https://github.com/LuYifei2011/tw-packager/issues'
   },
   FEEDBACK_SECONDARY: {
-    name: 'GitHub',
-    link: 'https://github.com/TurboWarp/packager/issues'
+    name: 'TurboWarp Packager',
+    link: 'https://github.com/TurboWarp/packager'
   },
   DONATE: '',
-  PRIVACY_POLICY: 'https://turbowarp.org/privacy.html',
+  PRIVACY_POLICY: '',
 };

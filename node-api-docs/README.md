@@ -3,7 +3,7 @@
 ## Installing
 
 ```bash
-npm install --save-exact @turbowarp/packager
+npm install --save-exact @luyifei2011/tw-packager
 ```
 
 We suggest that you use `--save-exact` (or, with yarn, `--exact`) to make sure you always install the same version. This is important because we don't promise API compatibility across even minor updates.
@@ -34,7 +34,7 @@ The Node.js module as published on npm is not intended to work in a browser rega
 
 Large assets such as Electron binaries are not stored in this repository and will be downloaded from a remote server on demand. While we aren't actively removing old files, we can't promise they will exist forever. Downloads are validated with a SHA-256 checksum and cached locally.
 
-Large assets are cached in `node_modules/@turbowarp/packager/.packager-cache`. You may want to periodically clean this folder.
+Large assets are cached in `node_modules/@luyifei2011/tw-packager/.packager-cache`. You may want to periodically clean this folder.
 
 ## Using the API
 
@@ -43,7 +43,7 @@ See demo.js or demo-simple.js for a full example.
 First, you can import the module like this:
 
 ```js
-const Packager = require('@turbowarp/packager');
+const Packager = require('@luyifei2011/tw-packager');
 ```
 
 ### Load a project
@@ -111,6 +111,60 @@ Some options expect an image as an argument. In the Node.js module, there is a s
 ```js
 packager.options.app.icon = new Packager.Image('image/png', fs.readFileSync('icon.png'));
 ```
+
+### Ahead-of-time compilation and protection
+
+The packager can compile a project into a `.sb3c` package before embedding it. VM member-access protection is enabled by default when this mode is selected; `javascript-obfuscator` can be added as a second stage.
+
+```js
+packager.options.compiler.aot.enabled = true;
+packager.options.compiler.aot.obfuscate = true;
+packager.options.compiler.aot.javascriptObfuscator = true;
+packager.options.compiler.aot.shortIds = true;
+packager.options.compiler.aot.seed = 'public-reproducible-seed';
+
+Object.assign(packager.options.compiler.aot.javascriptObfuscatorOptions, {
+  identifierNamesGenerator: 'mangled-shuffled',
+  stringArray: true,
+  stringArrayEncoding: 'rc4',
+  stringArrayThreshold: 0.75,
+  controlFlowFlattening: true,
+  controlFlowFlatteningThreshold: 0.5,
+  deadCodeInjection: false,
+  numbersToExpressions: true,
+  splitStrings: true,
+  splitStringsChunkLength: 8,
+  selfDefending: true,
+  debugProtection: true,
+  debugProtectionInterval: 3000
+});
+```
+
+`renameGlobals`, `renameProperties`, and source maps are intentionally unavailable for compiled factories because they can break VM bindings or the artifact format. Self-defending mode applies to each independently evaluated compiled factory and must be the final factory-source transformation. Debug protection is different: the packager generates one global player sidecar, so entry scripts and procedures do not each install their own guard or interval. An interval of `0` runs the guard once; repeating values must be at least 1000 ms, and 2000–4000 ms is the practical range suggested by JavaScript Obfuscator.
+
+These transformations are deterrence, not encryption or a security boundary. They raise the cost of casual inspection and automated analysis, but executable JavaScript and the accessor still reach the user's machine. Never include private keys, long-term secrets, authorization logic, or other client-side trust decisions in a project.
+
+For release builds, keep providers and secrets outside the serializable options object. `compiledProjectHooks` supports project-field seed selection, local or remote seed derivation, custom stages, `javascript-obfuscator` options, and integrity signing:
+
+```js
+packager.compiledProjectHooks = {
+  seedMaterial: ({project}) => ({
+    extensions: project.extensions,
+    targetNames: project.targets.map(target => target.name)
+  }),
+  deriveSeed: async ({materialSha256}) => {
+    const {seed, keyId} = await seedService.derive({materialSha256});
+    return {seed, keyId, derivationId: 'release-hmac-v1'};
+  },
+  javascriptObfuscatorOptions: {compact: true},
+  signManifest,
+  // Source for the verifier embedded in the generated player. It must be a
+  // self-contained async function accepting {payload, manifest, signature}.
+  signatureVerifierSource: verifyManifest.toString()
+};
+```
+
+The generated package includes a SHA-256 integrity manifest. When VM member-access protection is enabled, the matching accessor sidecar is embedded separately in the player and injected through the compiled artifact's declared binding. The artifact and accessor must always be published together; the packager handles this automatically.
 
 Note that a Packager is a single-use object; you must make a new Packager each time you want to package a project.
 

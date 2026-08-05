@@ -1,5 +1,7 @@
 // These will be replaced at build-time by generate-service-worker-plugin.js
-const ASSETS = [/* __ASSETS__ */];
+// Use a string placeholder because production minification removes comments
+// before GenerateServiceWorkerPlugin replaces this value.
+const ASSETS = '__ASSETS__';
 const CACHE_NAME = __CACHE_NAME__;
 const IS_PRODUCTION = __IS_PRODUCTION__;
 
