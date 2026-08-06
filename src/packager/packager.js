@@ -1873,7 +1873,7 @@ Packager.DEFAULT_OPTIONS = () => ({
     enabled: true,
     warpTimer: false,
     aot: {
-      enabled: false,
+      enabled: true,
       obfuscate: true,
       javascriptObfuscator: false,
       shortIds: true,
