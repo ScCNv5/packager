@@ -1,6 +1,7 @@
 import {readAsArrayBuffer} from '../common/readers';
 import request from '../common/request';
 import {AbortError} from '../common/errors';
+import {migrationError} from './compile-project';
 
 const downloadProject = async (buffer, progressCallback) => {
   const controller = typeof AbortController === 'function' && new AbortController();
@@ -42,6 +43,7 @@ const fromID = (id, token, progressCallback) => {
 };
 
 const fromFile = async (file, progressCallback) => {
+  if (/\.sb3c2?$/i.test(file.name)) throw migrationError();
   const buffer = await readAsArrayBuffer(file);
   return downloadProject(buffer, progressCallback);
 };

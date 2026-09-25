@@ -5,3 +5,4 @@ import WebAdapter from './adapter';
 setAdapter(new WebAdapter());
 
 export default Packager;
+export {compileProject} from '../compile-project';

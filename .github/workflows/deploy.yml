@@ -3,7 +3,7 @@ name: Deploy to GitHub Pages
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [main]
 
 concurrency:
   group: "deploy"
@@ -17,21 +17,30 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: tw-packager
     steps:
     - name: Checkout
       uses: actions/checkout@v6
       with:
         persist-credentials: false
-    - name: Install Node.js
-      uses: actions/setup-node@v6
+        path: tw-packager
+    - uses: ./tw-packager/.github/actions/setup-specialized
       with:
-        node-version: 24
-        cache: npm
-    - name: Install dependencies
-      run: npm ci
+        vm-ref: ${{ vars.SPECIALIZED_VM_REF }}
     - name: Test
-      run: npm test
+      run: |
+        npm test -- --runInBand
+        npm run build-node-prod
+        npm run test:specialized
+        node test/specialized-differential.mjs --linked
+        npm run test:specialized-build
+        node test/specialized-worker-input.mjs
+        npx playwright install --with-deps chromium firefox webkit
+        npm run test:specialized-browser
+        npm run test:specialized-performance
     - name: Build website
       run: |
         mkdir -p web
@@ -42,13 +51,14 @@ jobs:
     - name: Build standalone
       run: |
         npm run build-standalone-prod
+        node test/specialized-standalone.mjs
         cp dist/standalone.html web
     - name: Configure GitHub Pages
       uses: actions/configure-pages@v5
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v4
       with:
-        path: ./web/
+        path: ./tw-packager/web/
 
   deploy:
     environment:

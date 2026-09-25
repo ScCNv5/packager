@@ -30,16 +30,6 @@ export class UnknownNetworkError extends Error {
 }
 
 /**
- * Error indicating the packager is outdated and must be updated before it can continue.
- */
-export class OutdatedPackagerError extends Error {
-  constructor (message) {
-    super(message);
-    this.name = 'OutdatedPackagerError';
-  }
-}
-
-/**
  * Error indicating an HTTP status error.
  */
 export class HTTPError extends Error {

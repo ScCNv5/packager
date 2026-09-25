@@ -22,6 +22,8 @@ export default async function (scaffolding, pointerlock) {
     vm.runtime.once("PROJECT_LOADED", resolve);
   });
 
+  if (scaffolding._disposed) return;
+
   const vmStarted = () => vm.runtime._steppingInterval !== null;
 
   const scratchKeyToKey = (key) => {
@@ -98,6 +100,10 @@ export default async function (scaffolding, pointerlock) {
 
   GamepadLib.setConsole(console);
   const gamepad = new GamepadLib();
+  scaffolding._listeners.push(() => {
+    gamepad.removeEventHandlers();
+    cancelAnimationFrame(gamepad.animationFrame);
+  });
 
   const parsedOptions = parseOptionsComment();
   gamepad.getUserHints = () => {
@@ -140,6 +146,7 @@ export default async function (scaffolding, pointerlock) {
   const virtualCursorHide = () => {
     virtualCursorSetVisible(false);
   };
+  scaffolding._listeners.push(() => { clearTimeout(hideCursorTimeout); showRealCursor(); virtualCursorElement.remove(); });
   const virtualCursorSetDown = (down) => {
     virtualCursorSetVisible(true);
     virtualCursorElement.classList.toggle("sa-gamepad-cursor-down", down);
@@ -152,7 +159,7 @@ export default async function (scaffolding, pointerlock) {
     virtualCursorElement.style.transform = `translate(${stageX}px, ${stageY}px)`;
   };
 
-  document.addEventListener("mousemove", () => {
+  scaffolding._listen(document, "mousemove", () => {
     virtualCursorSetVisible(false);
     showRealCursor();
   });
@@ -169,6 +176,7 @@ export default async function (scaffolding, pointerlock) {
       }
     });
     resizeObserver.observe(canvas);
+    scaffolding._listeners.push(() => resizeObserver.disconnect());
     getCanvasSize = () => [canvasWidth, canvasHeight];
   } else {
     getCanvasSize = () => {

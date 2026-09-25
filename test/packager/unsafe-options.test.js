@@ -27,9 +27,3 @@ test('unsafe cloud behaviors', () => {
   options.cloudVariables.unsafeCloudBehaviors = true;
   expect(Packager.usesUnsafeOptions(options)).toBe(true);
 });
-
-test('debug protection', () => {
-  const options = Packager.DEFAULT_OPTIONS();
-  options.compiler.aot.javascriptObfuscatorOptions.debugProtection = true;
-  expect(Packager.usesUnsafeOptions(options)).toBe(true);
-});

@@ -1,21 +1,28 @@
 {
-  "name": "@luyifei2011/tw-packager",
+  "name": "@sccn/tw-packager",
   "version": "3.13.0",
   "description": "Compiles, protects, and packages Scratch projects as HTML, archives, or desktop applications.",
   "main": "dist/packager.js",
   "scripts": {
-    "start": "webpack serve",
+    "start": "npm run prepare:specialized && webpack serve",
     "clean": "rimraf dist",
-    "build": "npm run clean && webpack",
+    "build": "npm run clean && npm run prepare:specialized && webpack",
     "build-prod": "cross-env NODE_ENV=production npm run build",
-    "watch": "webpack --watch",
+    "watch": "npm run prepare:specialized && webpack --watch",
     "build-standalone": "cross-env STANDALONE=1 npm run build && node src/build/generate-standalone.js",
     "build-standalone-prod": "cross-env NODE_ENV=production npm run build-standalone",
     "build-node": "cross-env BUILD_MODE=node npm run build",
     "build-node-prod": "cross-env NODE_ENV=production npm run build-node",
     "test": "jest",
-    "prepublishOnly": "npm run test && npm run build-node-prod && node src/build/nodejs/update-readme.js node",
-    "postpublish": "node src/build/nodejs/update-readme.js restore"
+    "prepublishOnly": "npm run test && npm run build-node-prod && npm run test:specialized && npm run test:specialized-linked && npm run test:specialized-build && npm run test:specialized-performance && node src/build/nodejs/update-readme.js node",
+    "postpublish": "node src/build/nodejs/update-readme.js restore",
+    "prepare:specialized": "node scripts/prepare-runtime-sources.mjs && node scripts/build-linker.mjs",
+    "test:specialized": "node test/specialized-differential.mjs && node --test test/specialized-lifecycle.mjs test/specialized-structure.mjs test/specialized-rendering.mjs test/specialized-properties.mjs",
+    "test:specialized-linked": "node test/specialized-differential.mjs --linked",
+    "test:specialized-build": "node test/specialized-build.mjs",
+    "test:specialized-browser": "node test/specialized-browser.mjs",
+    "test:specialized-performance": "node test/specialized-performance.mjs",
+    "test:specialized-scratch-benchmark": "node test/specialized-scratch-benchmark.mjs"
   },
   "author": "LuYifei2011",
   "homepage": "https://luyifei2011.github.io/tw-packager/",
@@ -36,12 +43,24 @@
     "@turbowarp/json": "^0.1.1",
     "@turbowarp/jszip": "^3.11.0",
     "@turbowarp/sbdl": "^7.0.0",
+    "@xmldom/xmldom": "^0.9.12",
     "cross-fetch": "^4.1.0",
+    "pngjs": "^6.0.0",
+    "rollup": "4.63.1",
     "sha.js": "^2.4.11"
   },
   "devDependencies": {
     "@babel/core": "^7.16.5",
+    "@babel/generator": "^7.28.0",
+    "@babel/parser": "^7.28.0",
     "@babel/preset-env": "^7.16.5",
+    "@babel/traverse": "^7.28.0",
+    "@babel/types": "^7.28.0",
+    "@playwright/test": "^1.62.1",
+    "@rollup/browser": "4.63.1",
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
     "@turbowarp/scratch-storage": "^2.0.0",
     "@turbowarp/scratch-svg-renderer": "^1.1.0",
     "babel-jest": "^27.4.5",
@@ -52,16 +71,15 @@
     "fastestsmallesttextencoderdecoder": "^1.0.22",
     "file-loader": "^6.2.0",
     "html-webpack-plugin": "^4.5.2",
-    "javascript-obfuscator": "^5.5.0",
     "jest": "^27.4.5",
     "rimraf": "^2.7.1",
     "scratch-audio": "git+https://github.com/TurboWarp/scratch-audio.git#develop",
     "scratch-render": "git+https://github.com/TurboWarp/scratch-render.git#develop",
-    "scratch-vm": "git+https://github.com/LuYifei2011/scratch-vm.git#compiled-project-artifacts",
-    "sb3c-vm-obfuscator": "git+https://github.com/LuYifei2011/sb3c-vm-obfuscator.git#main",
+    "scratch-vm": "file:../scratch-vm",
     "style-loader": "^2.0.0",
     "svelte": "^3.44.3",
     "svelte-loader": "^3.1.2",
+    "terser": "^5.43.1",
     "url-loader": "^4.1.1",
     "webpack": "4.47.0",
     "webpack-bundle-analyzer": "^4.5.0",
@@ -73,5 +91,8 @@
     "webpack@4.47.0": {
       "terser-webpack-plugin": "^4.2.3"
     }
+  },
+  "engines": {
+    "node": ">=22.15.0"
   }
 }

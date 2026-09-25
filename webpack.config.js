@@ -3,7 +3,6 @@ const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const AddBuildIDToOutputPlugin = require('./src/build/add-build-id-to-output-plugin');
 const GenerateServiceWorkerPlugin = require('./src/build/generate-service-worker-plugin');
 const EagerDynamicImportPlugin = require('./src/build/eager-dynamic-import-plugin');
 
@@ -13,66 +12,27 @@ const base = {
   mode: isProduction ? 'production' : 'development'
 };
 const dist = path.resolve(__dirname, 'dist');
-const buildId = isProduction ? require('./src/build/generate-scaffolding-build-id') : null;
 const nodeCompatibilityAliases = {
-  'node:crypto': require.resolve('crypto-browserify'),
-  'node:buffer': require.resolve('buffer/'),
-  // The GitHub package exports ESM but its current package metadata has no
-  // Webpack 4-compatible main/module field.
-  'sb3c-vm-obfuscator$': path.resolve(__dirname, 'node_modules', 'sb3c-vm-obfuscator', 'src', 'index.mjs'),
-  // Use the self-contained browser distribution in both targets. The Node
-  // entry pulls in ESM dependencies which Webpack 4 cannot parse directly.
-  'javascript-obfuscator$': path.resolve(__dirname, 'node_modules', 'javascript-obfuscator', 'dist', 'index.browser.js')
+  'scratch-vm$': path.resolve(__dirname, '../scratch-vm/src/index.js'),
+  'scratch-sb1-converter$': path.resolve(__dirname, '../scratch-vm/node_modules/scratch-sb1-converter/index.js'),
+  '@turbowarp/scratch-storage$': path.resolve(__dirname, 'node_modules/@turbowarp/scratch-storage/src/index.js'),
+  'text-encoding$': path.resolve(__dirname, 'src/scaffolding/text-encoding/index.js'),
+  '@vernier/godirect$': path.resolve(__dirname, '../scratch-vm/node_modules/@vernier/godirect/src/godirect.js')
 };
-const compiledProjectJavaScriptRules = [
-  {
-    // Webpack 4 treats .mjs as strict ESM and otherwise rejects named imports
-    // from CommonJS dependencies used by Babel's AST packages.
-    test: /\.mjs$/,
-    include: /node_modules/,
-    type: 'javascript/auto'
-  },
-  {
-    test: /\.(?:mjs|js)$/,
-    loader: 'babel-loader',
-    include: [/node_modules[\\/]scratch-[^\\/]+[\\/]src/],
-    options: {
-      babelrc: false,
-      presets: ['@babel/preset-env']
-    }
-  },
-  {
-    test: /\.mjs$/,
-    type: 'javascript/auto',
-    loader: 'babel-loader',
-    include: [/node_modules[\\/]sb3c-vm-obfuscator[\\/]src/],
-    options: {
-      babelrc: false,
-      // javascript/auto enables CJS named-import interop for Babel's parser
-      // packages while preserving ESM so Webpack can bundle relative modules.
-      presets: [['@babel/preset-env', {modules: false}]]
-    }
-  },
-  {
-    test: /javascript-obfuscator[\\/]dist[\\/]index\.browser\.js$/,
-    type: 'javascript/auto',
-    use: [
-      {
-        loader: 'babel-loader',
-        options: {
-          babelrc: false,
-          presets: [['@babel/preset-env', {modules: false}]]
-        }
-      },
-      {
-        // Its UMD wrapper assumes a browser global named `self`.
-        loader: path.resolve(__dirname, 'src', 'build', 'global-self-loader.js')
-      }
-    ]
-  }
-];
+const compiledProjectJavaScriptRules = [{
+  test: /\.(?:png|svg|wav)$/,
+  include: /scratch-storage[\\/]src[\\/]builtins/,
+  loader: path.resolve(__dirname, 'src/build/bytes-loader.js')
+}, {
+  test: /\.[cm]?js$/,
+  include: [path.resolve(__dirname, '../scratch-vm/src'), /node_modules[\\/]@vernier[\\/]godirect[\\/]src/],
+  type: 'javascript/auto',
+  loader: 'babel-loader',
+  options: {babelrc: false, presets: [['@babel/preset-env', {modules: false}]]}
+}];
 const compiledProjectAudioRule = {
   test: /\.(?:mp3|wav)$/i,
+  exclude: /scratch-storage[\\/]src[\\/]builtins/,
   use: [{
     // The compiler only needs extension block definitions, not sample bytes.
     loader: path.resolve(__dirname, 'src', 'build', 'noop-loader.js')
@@ -94,100 +54,8 @@ const getVersion = () => {
 };
 const version = getVersion();
 
-const makeScaffolding = ({full}) => ({
-  ...base,
-  devtool: isProduction ? '' : 'source-map',
-  output: {
-    filename: 'scaffolding/[name].js',
-    path: dist
-  },
-  entry: full ? {
-    'scaffolding-full': './src/scaffolding/export.js',
-    addons: './src/addons/index.js'
-  } : {
-    'scaffolding-min': './src/scaffolding/export.js'
-  },
-  resolve: {
-    alias: {
-      'text-encoding$': path.resolve(__dirname, 'src', 'scaffolding', 'text-encoding'),
-      'htmlparser2$': path.resolve(__dirname, 'src', 'scaffolding', 'htmlparser2'),
-      'scratch-translate-extension-languages$': path.resolve(__dirname, 'src', 'scaffolding', 'scratch-translate-extension-languages', 'languages.json'),
-      'scratch-parser$': path.resolve(__dirname, 'src', 'scaffolding', 'scratch-parser')
-    }
-  },
-  module: {
-    rules: [
-      {
-        test: /\.jsx?$/,
-        loader: 'babel-loader',
-        include: [
-          path.resolve(__dirname, 'src'),
-          /node_modules[\\/]scratch-[^\\/]+[\\/]src/
-        ],
-        options: {
-          babelrc: false,
-          presets: ['@babel/preset-env']
-        }
-      },
-      {
-        test: /\.(svg|png)$/i,
-        use: [{
-          loader: 'url-loader'
-        }]
-      },
-      ...(full ? [{
-        test: /\.mp3$/i,
-        use: [{
-          loader: 'url-loader',
-          options: {
-            esModule: false
-          }
-        }]
-      }] : [{
-        test: /\.mp3$/i,
-        use: [{
-          loader: path.resolve(__dirname, 'src', 'build', 'noop-loader.js')
-        }]
-      }]),
-      {
-        test: /\.css$/i,
-        use: [
-          {
-            loader: 'style-loader',
-            options: {
-              // This function is stringified and run in a web environment
-              insert: (styleElement) => {
-                var el = document.head || document.body || document.documentElement;
-                el.insertBefore(styleElement, el.firstChild);
-              }
-            }
-          },
-          {
-            loader: 'css-loader',
-            options: {
-              modules: {
-                localIdentName: 'sc-[local]',
-                exportLocalsConvention: 'camelCase',
-              },
-            }
-          }
-        ],
-      }
-    ]
-  },
-  resolveLoader: {
-    // Replace worker-loader with our own modified version
-    modules: [path.resolve(__dirname, 'src', 'build', 'inline-worker-loader'), 'node_modules'],
-  },
-  plugins: [
-    ...(buildId ? [new AddBuildIDToOutputPlugin(buildId)] : []),
-    ...(process.env.BUNDLE_ANALYZER === (full ? 'scaffolding-full' : 'scaffolding-min') ? [new BundleAnalyzerPlugin()] : [])
-  ]
-});
-
 const commonFrontendPlugins = () => [
   new webpack.DefinePlugin({
-    'process.env.SCAFFOLDING_BUILD_ID': buildId ? JSON.stringify(buildId) : '("development-" + Math.random().toString().substring(2))',
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
   })
 ];
@@ -222,6 +90,7 @@ const makeWebsite = () => ({
       compiledProjectAudioRule,
       {
         test: /\.png|\.svg$/i,
+        exclude: /scratch-storage[\\/]src[\\/]builtins/,
         use: isStandalone ? {
           loader: 'url-loader'
         } : {
@@ -243,7 +112,10 @@ const makeWebsite = () => ({
       patterns: [
         {
           from: 'static'
-        }
+        },
+        {from: 'generated/specialized-worker.js'},
+        {from: 'generated/rollup.browser.js'},
+        {from: 'generated/bindings_wasm_bg.wasm'}
       ]
     }),
     new webpack.DefinePlugin({
@@ -296,6 +168,7 @@ const makeNode = () => ({
     '@fiahfy/icns': '@fiahfy/icns',
     'cross-fetch': 'cross-fetch',
     'sha.js': 'sha.js',
+    'specialized-link': 'commonjs ./specialized-link.cjs',
   },
   module: {
     rules: [
@@ -303,19 +176,20 @@ const makeNode = () => ({
       compiledProjectAudioRule,
       {
         test: /\.png|\.svg$/i,
+        exclude: /scratch-storage[\\/]src[\\/]builtins/,
         use: 'file-loader'
       }
     ]
   },
   plugins: [
     ...commonFrontendPlugins(),
+    new CopyWebpackPlugin({patterns: [{from: 'generated/specialized-link.cjs'}]}),
     ...(process.env.BUNDLE_ANALYZER === 'node' ? [new BundleAnalyzerPlugin()] : [])
   ],
 });
 
 module.exports = [
-  makeScaffolding({full: true}),
-  makeScaffolding({full: false}),
+
   ...(process.env.BUILD_MODE === 'node' ? [
     makeNode()
   ] : [

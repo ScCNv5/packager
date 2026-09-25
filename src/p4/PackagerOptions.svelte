@@ -11,7 +11,7 @@
   import LearnMore from './LearnMore.svelte';
   import ColorPicker from './ColorPicker.svelte';
   import Downloads from './Downloads.svelte';
-  import writablePersistentStore from './persistent-store';
+  import writablePackagerOptionsStore from './packager-options-store';
   import fileStore from './file-store';
   import {progress, currentTask, error} from './stores';
   import Preview from './preview';
@@ -22,6 +22,7 @@
   import {recursivelySerializeBlobs, recursivelyDeserializeBlobs} from './blob-serializer';
   import {readAsText} from '../common/readers';
   import merge from './merge';
+  import {validatePackagerOptions} from '../packager/compile-project';
   import DropArea from './DropArea.svelte';
   import {APP_NAME} from '../packager/brand';
 
@@ -40,7 +41,7 @@
   defaultOptions.app.packageName = Packager.getDefaultPackageNameFromFileName(projectData.title);
   defaultOptions.app.windowTitle = Packager.getWindowTitleFromFileName(projectData.title);
   defaultOptions.extensions = projectData.project.analysis.extensions;
-  const options = writablePersistentStore(`PackagerOptions.${projectData.uniqueId}`, defaultOptions);
+  const options = writablePackagerOptionsStore(`PackagerOptions.${projectData.uniqueId}`, defaultOptions);
 
   // Compatibility with https://github.com/TurboWarp/packager/commit/f66199abd1c896c11aa69247275a1594fdfc95b8
   $options.extensions = $options.extensions.map(i => {
@@ -103,9 +104,7 @@
     $options.compiler.enabled !== defaultOptions.compiler.enabled ||
     $options.compiler.warpTimer !== defaultOptions.compiler.warpTimer ||
     $options.extensions.length !== 0 ||
-    $options.bakeExtensions !== defaultOptions.bakeExtensions ||
     $options.custom.css !== '' ||
-    $options.custom.js !== '' ||
     $options.projectId !== defaultOptions.projectId ||
     $options.packagedRuntime !== defaultOptions.packagedRuntime ||
     $options.maxTextureDimension !== defaultOptions.maxTextureDimension
@@ -260,6 +259,7 @@
       const text = await readAsText(file);
       const parsed = ExtendedJSON.parse(text);
       const deserialized = recursivelyDeserializeBlobs(parsed);
+      validatePackagerOptions(deserialized);
       const copiedDefaultOptions = deepClone(defaultOptions);
       const mergedWithDefaults = merge(deserialized, copiedDefaultOptions);
       if (mergedWithDefaults.maxClones === ALMOST_INFINITY) {
@@ -457,158 +457,14 @@
   </div>
 </Section>
 
-<Section
-  accent="#855CD6"
-  reset={() => resetOptions(['compiler.aot'])}
->
+<Section accent="#855CD6" reset={() => resetOptions(['compiler.seed'])}>
   <div>
-    <h2>{$_('options.compiledProtection')}</h2>
-    <p>{$_('options.compiledProtectionDescription')}</p>
-    <div class="option">
-      <label>
-        <input type="checkbox" bind:checked={$options.compiler.aot.enabled}>
-        {$_('options.aotCompile')}
-      </label>
-    </div>
-    {#if $options.compiler.aot.enabled}
-      <div class="suboptions" transition:slide|local>
-        <div class="option">
-          <label>
-            <input type="checkbox" bind:checked={$options.compiler.aot.obfuscate}>
-            {$_('options.obfuscateCompiledProject')}
-          </label>
-        </div>
-        <div class="option">
-          <label>
-            <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscator}>
-            {$_('options.javascriptObfuscator')}
-          </label>
-        </div>
-        <label class="option">
-          {$_('options.obfuscationSeed')}
-          <input type="text" bind:value={$options.compiler.aot.seed} placeholder={$_('options.derivedFromProject')}>
-        </label>
-
-        {#if $options.compiler.aot.javascriptObfuscator}
-          <details open>
-            <summary>{$_('options.javascriptObfuscatorOptions')}</summary>
-            <label class="option">
-              <input type="checkbox"
-                checked={$options.compiler.aot.javascriptObfuscatorOptions.selfDefending ||
-                  $options.compiler.aot.javascriptObfuscatorOptions.compact}
-                disabled={$options.compiler.aot.javascriptObfuscatorOptions.selfDefending}
-                on:change={(event) => {
-                  $options.compiler.aot.javascriptObfuscatorOptions.compact = event.target.checked;
-                  $options = $options;
-                }}>
-              {$_('options.compactOutput')}
-            </label>
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.simplify}>
-              {$_('options.simplifyCode')}
-            </label>
-            <label class="option">
-              {$_('options.identifierNamesGenerator')}
-              <select bind:value={$options.compiler.aot.javascriptObfuscatorOptions.identifierNamesGenerator}>
-                <option value="hexadecimal">hexadecimal</option>
-                <option value="mangled">mangled</option>
-                <option value="mangled-shuffled">mangled-shuffled</option>
-              </select>
-            </label>
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.stringArray}>
-              {$_('options.stringArray')}
-            </label>
-            {#if $options.compiler.aot.javascriptObfuscatorOptions.stringArray}
-              <label class="option nested">
-                {$_('options.stringArrayEncoding')}
-                <select bind:value={$options.compiler.aot.javascriptObfuscatorOptions.stringArrayEncoding}>
-                  <option value="none">{$_('options.encodingNone')}</option>
-                  <option value="base64">base64</option>
-                  <option value="rc4">rc4</option>
-                </select>
-              </label>
-              <label class="option nested">
-                {$_('options.transformationThreshold')}
-                <input type="number" min="0" max="1" step="0.05"
-                  bind:value={$options.compiler.aot.javascriptObfuscatorOptions.stringArrayThreshold}>
-              </label>
-            {/if}
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.controlFlowFlattening}>
-              {$_('options.controlFlowFlattening')}
-            </label>
-            {#if $options.compiler.aot.javascriptObfuscatorOptions.controlFlowFlattening}
-              <label class="option nested">
-                {$_('options.transformationThreshold')}
-                <input type="number" min="0" max="1" step="0.05"
-                  bind:value={$options.compiler.aot.javascriptObfuscatorOptions.controlFlowFlatteningThreshold}>
-              </label>
-            {/if}
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.deadCodeInjection}>
-              {$_('options.deadCodeInjection')}
-            </label>
-            {#if $options.compiler.aot.javascriptObfuscatorOptions.deadCodeInjection}
-              <label class="option nested">
-                {$_('options.transformationThreshold')}
-                <input type="number" min="0" max="1" step="0.05"
-                  bind:value={$options.compiler.aot.javascriptObfuscatorOptions.deadCodeInjectionThreshold}>
-              </label>
-            {/if}
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.splitStrings}>
-              {$_('options.splitStrings')}
-            </label>
-            {#if $options.compiler.aot.javascriptObfuscatorOptions.splitStrings}
-              <label class="option nested">
-                {$_('options.splitStringsChunkLength')}
-                <input type="number" min="1" step="1"
-                  bind:value={$options.compiler.aot.javascriptObfuscatorOptions.splitStringsChunkLength}>
-              </label>
-            {/if}
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.numbersToExpressions}>
-              {$_('options.numbersToExpressions')}
-            </label>
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.transformObjectKeys}>
-              {$_('options.transformObjectKeys')}
-            </label>
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.unicodeEscapeSequence}>
-              {$_('options.unicodeEscapeSequence')}
-            </label>
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.disableConsoleOutput}>
-              {$_('options.disableConsoleOutput')}
-            </label>
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.selfDefending}>
-              {$_('options.selfDefending')}
-            </label>
-            {#if $options.compiler.aot.javascriptObfuscatorOptions.selfDefending}
-              <p class="warning">{$_('options.selfDefendingWarning')}</p>
-            {/if}
-            <label class="option">
-              <input type="checkbox" bind:checked={$options.compiler.aot.javascriptObfuscatorOptions.debugProtection}>
-              {$_('options.debugProtection')}
-            </label>
-            {#if $options.compiler.aot.javascriptObfuscatorOptions.debugProtection}
-              <label class="option nested">
-                {$_('options.debugProtectionInterval')}
-                <input type="number" min="0" step="1000"
-                  bind:value={$options.compiler.aot.javascriptObfuscatorOptions.debugProtectionInterval}>
-              </label>
-              <p>{$_('options.debugProtectionGlobal')}</p>
-              <p class="warning">{$_('options.debugProtectionWarning')}</p>
-            {/if}
-          </details>
-          <p>{$_('options.javascriptObfuscatorPerformance')}</p>
-        {/if}
-      </div>
-      <p class="warning">{$_('options.aotCompileWarning')}</p>
-    {/if}
+    <h2>{$_('options.specializedProtection')}</h2>
+    <p>{$_('options.specializedProtectionDescription')}</p>
+    <label class="option">
+      {$_('options.buildSeed')}
+      <input type="text" bind:value={$options.compiler.seed} placeholder={$_('options.randomBuildSeed')}>
+    </label>
   </div>
 </Section>
 
@@ -856,16 +712,6 @@
         <LearnMore slug="packager/special-cloud-behaviors" />
       </div>
 
-      <div class="option">
-        <label>
-          <input type="checkbox" bind:checked={$options.cloudVariables.unsafeCloudBehaviors}>
-          {$_('options.unsafeCloudBehaviors')}
-        </label>
-        <LearnMore slug="packager/special-cloud-behaviors#eval" />
-      </div>
-      {#if $options.cloudVariables.unsafeCloudBehaviors}
-        <p class="warning">{$_('options.unsafeCloudBehaviorsWarning')}</p>
-      {/if}
       <p>{$_('options.implicitCloudHint').replace('{cloud}', '☁')}</p>
     {:else}
       <p>{$_('options.noCloudVariables')}</p>
@@ -879,7 +725,6 @@
     resetOptions([
       'compiler',
       'extensions',
-      'bakeExtensions',
       'custom',
       'projectId',
       'maxTextureDimension'
@@ -891,13 +736,6 @@
     <details open={advancedOptionsInitiallyOpen}>
       <summary>{$_('options.advancedSummary')}</summary>
 
-      <div class="option">
-        <label>
-          <input type="checkbox" bind:checked={$options.compiler.enabled}>
-          {$_('options.enableCompiler')}
-        </label>
-        <LearnMore slug="disable-compiler" />
-      </div>
       <div class="option">
         <label>
           <input type="checkbox" bind:checked={$options.compiler.warpTimer}>
@@ -917,19 +755,9 @@
       </label>
 
       <label class="option">
-        <input type="checkbox" bind:checked={$options.bakeExtensions}>
-        {$_('options.bakeExtensions')}
-      </label>
-
-      <label class="option">
         {$_('options.customCSS')}
         <textarea bind:value={$options.custom.css}></textarea>
       </label>
-      <label class="option">
-        {$_('options.customJS')}
-        <textarea bind:value={$options.custom.js}></textarea>
-      </label>
-
       <label class="option">
         {$_('options.projectId')}
         <input type="text" bind:value={$options.projectId}>

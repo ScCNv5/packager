@@ -112,59 +112,38 @@ Some options expect an image as an argument. In the Node.js module, there is a s
 packager.options.app.icon = new Packager.Image('image/png', fs.readFileSync('icon.png'));
 ```
 
-### Ahead-of-time compilation and protection
+### Program-specific compilation
 
-The packager can compile a project into a `.sb3c` package before embedding it. VM member-access protection is enabled by default when this mode is selected; `javascript-obfuscator` can be added as a second stage.
+Every export jointly links the optimized project and its specialized VM. Node 22.15 or newer is required.
 
 ```js
-packager.options.compiler.aot.enabled = true;
-packager.options.compiler.aot.obfuscate = true;
-packager.options.compiler.aot.javascriptObfuscator = true;
-packager.options.compiler.aot.shortIds = true;
-packager.options.compiler.aot.seed = 'public-reproducible-seed';
+packager.options.compiler.seed = 'reproducible-build';
+packager.options.compiler.warpTimer = false;
+```
 
-Object.assign(packager.options.compiler.aot.javascriptObfuscatorOptions, {
-  identifierNamesGenerator: 'mangled-shuffled',
-  stringArray: true,
-  stringArrayEncoding: 'rc4',
-  stringArrayThreshold: 0.75,
-  controlFlowFlattening: true,
-  controlFlowFlatteningThreshold: 0.5,
-  deadCodeInjection: false,
-  numbersToExpressions: true,
-  splitStrings: true,
-  splitStringsChunkLength: 8,
-  selfDefending: true,
-  debugProtection: true,
-  debugProtectionInterval: 3000
+The seed is optional; an empty seed selects fresh cryptographic random build material. A seed is not a secret or an encryption key.
+
+To obtain the linked JavaScript and resource archive without a page wrapper:
+
+```js
+const {compileProject} = require('@sccn/tw-packager');
+const player = await compileProject(fs.readFileSync('project.sb3'), {
+  seed: 'reproducible-build',
+  autoplay: false
 });
+fs.writeFileSync('player.js', player.code);
+for (const asset of player.assets) fs.writeFileSync(asset.name, asset.data);
 ```
 
-`renameGlobals`, `renameProperties`, and source maps are intentionally unavailable for compiled factories because they can break VM bindings or the artifact format. Self-defending mode applies to each independently evaluated compiled factory and must be the final factory-source transformation. Debug protection is different: the packager generates one global player sidecar, so entry scripts and procedures do not each install their own guard or interval. An interval of `0` runs the guard once; repeating values must be at least 1000 ms, and 2000–4000 ms is the practical range suggested by JavaScript Obfuscator.
+Load `player.js` with a normal script tag alongside `project.zip`. `player.buildId` identifies the final JavaScript and resource archive; `player.diagnostics` contains capability reasons, retained/removed modules, internal property mappings and continuation groups. `diagnostics.schedulingProperties` lists the audited Thread/Sequencer methods and their final names; `diagnostics.reservedPropertyReasons` explains names retained for dynamic access, reflection or uncertain ownership. Keep diagnostics as development material, outside the player.
 
-These transformations are deterrence, not encryption or a security boundary. They raise the cost of casual inspection and automated analysis, but executable JavaScript and the accessor still reach the user's machine. Never include private keys, long-term secrets, authorization logic, or other client-side trust decisions in a project.
+Pass `sourceMap: true` to receive a separate `player.sourceMap` object for local debugging. It contains source information and must not be distributed with a protected player. The default result omits it, and neither mode inserts a source-map URL into the code.
 
-For release builds, keep providers and secrets outside the serializable options object. `compiledProjectHooks` supports project-field seed selection, local or remote seed derivation, custom stages, `javascript-obfuscator` options, and integrity signing:
+The browser exposes a frozen `window.player` with `start`, `stop`, `pause`, `resume`, `postInput(device, data)`, `on(event, callback)`, `off(event, callback)` and `dispose`. Events are `loaded`, `state`, `problem`, and `error`; event payloads contain no VM references. Wait for `loaded` before starting a player with autoplay disabled.
 
-```js
-packager.compiledProjectHooks = {
-  seedMaterial: ({project}) => ({
-    extensions: project.extensions,
-    targetNames: project.targets.map(target => target.name)
-  }),
-  deriveSeed: async ({materialSha256}) => {
-    const {seed, keyId} = await seedService.derive({materialSha256});
-    return {seed, keyId, derivationId: 'release-hmac-v1'};
-  },
-  javascriptObfuscatorOptions: {compact: true},
-  signManifest,
-  // Source for the verifier embedded in the generated player. It must be a
-  // self-contained async function accepting {payload, manifest, signature}.
-  signatureVerifierSource: verifyManifest.toString()
-};
-```
+Third-party extensions run in isolated Workers. Supply URLs in `options.extensions`, or `{url, source, dependencies}` objects to `compileProject`; `dependencies` maps absolute code URLs to source strings. Static imports and literal `importScripts` dependencies are frozen during the build. Registration must finish synchronously; block operations may be asynchronous. Extensions requiring full VM access, compiler mutation, dynamic code imports or new runtime extensions fail compilation.
 
-The generated package includes a SHA-256 integrity manifest. When VM member-access protection is enabled, the matching accessor sidecar is embedded separately in the player and injected through the compiled artifact's declared binding. The artifact and accessor must always be published together; the packager handles this automatically.
+Old `.sb3c`/`.sb3c2` packages, `compiler.aot`, `compiledProjectHooks`, signing/network protection, `bakeExtensions`, custom JavaScript, and unsafe cloud evaluation have been removed. Rebuild from the original SB3 and reset legacy settings. Ordinary cloud variables remain available through the packager's cloud options.
 
 Note that a Packager is a single-use object; you must make a new Packager each time you want to package a project.
 

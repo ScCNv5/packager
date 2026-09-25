@@ -4,6 +4,43 @@ import {readAsURL, readAsArrayBuffer} from '../../common/readers';
 import defaultIcon from '../images/default-icon.png';
 
 class WebAdapter {
+  linkSpecialized (options) {
+    return new Promise((resolve, reject) => {
+      const urls = [];
+      let workerURL = new URL('specialized-worker.js', document.baseURI);
+      if (window.__ASSETS__ && window.__ASSETS__['specialized-worker.js']) {
+        const assets = window.__ASSETS__;
+        workerURL = URL.createObjectURL(new Blob([
+          `self.__specializedWasmBytes = Uint8Array.from(atob(${JSON.stringify(assets['bindings_wasm_bg.wasm'])}), c => c.charCodeAt(0));\n`,
+          assets['rollup.browser.js'], '\n', assets['specialized-worker.js']
+        ], {type: 'text/javascript'}));
+        urls.push(workerURL);
+      }
+      const worker = new Worker(workerURL);
+      const cleanup = () => { worker.terminate(); urls.forEach(url => URL.revokeObjectURL(url)); };
+      worker.onmessage = ({data}) => {
+        cleanup();
+        if (data.error) reject(Object.assign(new Error(data.error), {missingDependency: data.missingDependency})); else resolve(data.result);
+      };
+      worker.onerror = event => { cleanup(); reject(new Error(event.message)); };
+      worker.postMessage(options);
+    });
+  }
+  prepareExtension (options) { return this.linkSpecialized({operation: 'extension', options}); }
+  inspectExtension (code) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(new Blob([code], {type: 'text/javascript'}));
+      const worker = new Worker(url);
+      const cleanup = () => { clearTimeout(timer); worker.terminate(); URL.revokeObjectURL(url); };
+      const timer = setTimeout(() => { cleanup(); reject(new Error('Extension metadata collection timed out')); }, 5000);
+      worker.onmessage = ({data}) => {
+        if (data.type !== 'ready') return;
+        cleanup();
+        if (!data.infos.length) reject(new Error('Extension must register during initialization')); else resolve(data.infos);
+      };
+      worker.onerror = event => { cleanup(); reject(new Error(event.message)); };
+    });
+  }
   getCachedAsset (asset) {
     return assetCache.get(asset)
   }

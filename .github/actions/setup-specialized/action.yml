@@ -1,0 +1,37 @@
+name: Set up specialized build sources
+description: Install a pinned sibling VM and the packager from their lockfiles
+inputs:
+  vm-ref:
+    description: Full commit SHA of the matching modified scratch-vm
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Require a pinned VM revision
+      shell: bash
+      env:
+        SPECIALIZED_VM_REF: ${{ inputs.vm-ref }}
+      run: |
+        if [[ ! "$SPECIALIZED_VM_REF" =~ ^[0-9a-f]{40}$ ]]; then
+          echo 'Set the SPECIALIZED_VM_REF repository variable to the matching scratch-vm commit SHA.' >&2
+          exit 1
+        fi
+    - uses: actions/checkout@v6
+      with:
+        repository: ScratchCN/Scratch-vm
+        ref: ${{ inputs.vm-ref }}
+        path: scratch-vm
+        persist-credentials: false
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: |
+          scratch-vm/package-lock.json
+          tw-packager/package-lock.json
+    - name: Install locked sources
+      shell: bash
+      working-directory: tw-packager
+      run: |
+        npm ci --prefix ../scratch-vm
+        npm ci

@@ -1,3 +1,4 @@
+import {Adapter} from './adapter';
 // Parses and generates Apple Info.plist files
 // Example file:
 /*
@@ -66,14 +67,15 @@
 const xmlToValue = (node) => {
   if (node.tagName === 'dict') {
     const result = {};
-    for (const child of node.children) {
+    const children = Array.from(node.childNodes).filter(child => child.nodeType === 1);
+    for (const [index, child] of children.entries()) {
       if (child.tagName === 'key') {
-        result[child.textContent] = xmlToValue(child.nextElementSibling);
+        Object.defineProperty(result, child.textContent, {value: xmlToValue(children[index + 1]), enumerable: true, writable: true, configurable: true});
       }
     }
     return result;
   } else if (node.tagName === 'array') {
-    return Array.from(node.children).map(xmlToValue);
+    return Array.from(node.childNodes).filter(child => child.nodeType === 1).map(xmlToValue);
   } else if (node.tagName === 'string') {
     return node.textContent;
   } else if (node.tagName === 'true') {
@@ -115,18 +117,18 @@ const valueToXml = (doc, value) => {
 };
 
 export const parsePlist = (string) => {
-  const xml = new DOMParser().parseFromString(string, 'text/xml');
-  const rootNode = xml.children[0];
-  const rootDict = rootNode.children[0];
+  const xml = Adapter && Adapter.parseXML ? Adapter.parseXML(string) : new DOMParser().parseFromString(string, 'text/xml');
+  const rootNode = xml.documentElement;
+  const rootDict = Array.from(rootNode.childNodes).find(child => child.nodeType === 1);
   return xmlToValue(rootDict);
 };
 
 export const generatePlist = (values) => {
-  const xml = document.implementation.createDocument(null, "plist");
+  const xml = Adapter && Adapter.createXMLDocument ? Adapter.createXMLDocument('plist') : document.implementation.createDocument(null, "plist");
   const rootNode = xml.documentElement;
   rootNode.setAttribute('version', '1.0');
   rootNode.appendChild(valueToXml(xml, values));
-  const serialized = new XMLSerializer().serializeToString(xml);
+  const serialized = Adapter && Adapter.serializeXML ? Adapter.serializeXML(xml) : new XMLSerializer().serializeToString(xml);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 ${serialized}`;

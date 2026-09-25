@@ -1,4 +1,5 @@
 import {readAsArrayBuffer} from '../common/readers';
+import {Adapter} from './adapter';
 
 const loadImage = (src) => new Promise((resolve, reject) => {
   const image = new Image();
@@ -18,6 +19,7 @@ const canvasToBlob = (canvas) => new Promise((resolve, reject) => {
 });
 
 const pngToAppleICNS = async (pngData) => {
+  if (Adapter.pngToAppleICNS) return Adapter.pngToAppleICNS(pngData);
   const {
     Icns,
     Buffer

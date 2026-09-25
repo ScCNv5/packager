@@ -1,5 +1,4 @@
 import largeAssets from '../large-assets';
-import {buildId} from '../build-id';
 import Database from '../../common/idb';
 
 const DATABASE_NAME = 'p4-large-assets';
@@ -12,7 +11,7 @@ const getAssetId = (asset) => {
   if (asset.sha256) {
     return asset.sha256;
   }
-  return `${buildId}-${JSON.stringify(asset.src)}`;
+  throw new Error('Cached desktop resources require a content hash');
 };
 
 const removeExtraneous = async () => {

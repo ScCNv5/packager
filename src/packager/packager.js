@@ -4,15 +4,13 @@ import escapeXML from '../common/escape-xml';
 import largeAssets from './large-assets';
 import request from '../common/request';
 import pngToAppleICNS from './icns';
-import {buildId, verifyBuildId} from './build-id';
-import {encode} from './base85';
 import {parsePlist, generatePlist} from './plist';
 import {APP_NAME, WEBSITE, COPYRIGHT_NOTICE, ACCENT_COLOR} from './brand';
-import {OutdatedPackagerError} from '../common/errors';
 import {darken} from './colors';
 import {Adapter} from './adapter';
 import encodeBigString from './encode-big-string';
-import compileProject from './compile-project';
+import {prepareProject, finishProject, migrationError, validatePackagerOptions} from './compile-project';
+import {facadeSource} from '../specialized/facade';
 
 const PROGRESS_LOADED_SCRIPTS = 0.1;
 
@@ -188,8 +186,7 @@ class Packager extends EventTarget {
     this.aborted = false;
     this.used = false;
     // Functions and provider credentials belong here rather than in serializable UI options.
-    this.compiledProjectHooks = {};
-    this.compiledProjectRuntime = null;
+    this.specializedBuild = null;
   }
 
   abort () {
@@ -234,12 +231,8 @@ class Packager extends EventTarget {
       console.warn(e);
     }
     if (!result) {
-      let url = asset.src;
-      if (asset.useBuildId) {
-        url += `?${buildId}`;
-      }
       result = await request({
-        url,
+        url: asset.src,
         type,
         estimatedSize: asset.estimatedSize,
         progressCallback: (progress) => {
@@ -247,9 +240,6 @@ class Packager extends EventTarget {
         },
         abortTarget: this
       });
-    }
-    if (asset.useBuildId && !verifyBuildId(buildId, result)) {
-      throw new OutdatedPackagerError('Build ID does not match.');
     }
     if (asset.sha256) {
       const hash = await sha256(result);
@@ -272,54 +262,20 @@ class Packager extends EventTarget {
     return {
       ...this.options.chunks,
       specialCloudBehaviors: this.options.cloudVariables.specialCloudBehaviors,
-      unsafeCloudBehaviors: this.options.cloudVariables.unsafeCloudBehaviors,
-      pause: this.options.controls.pause.enabled
+      pause: true
     };
   }
 
   async loadResources () {
-    const texts = [COPYRIGHT_HEADER];
-    if (this.project.analysis.usesMusic) {
-      texts.push(await this.fetchLargeAsset('scaffolding', 'text'));
-    } else {
-      texts.push(await this.fetchLargeAsset('scaffolding-min', 'text'));
-    }
-    if (Object.values(this.getAddonOptions()).some((i) => i)) {
-      texts.push(await this.fetchLargeAsset('addons', 'text'));
-    }
-    this.script = texts.join('\n').replace(/<\/script>/g,"</scri'+'pt>");
+    this.script = '';
   }
 
   async prepareCompiledProject () {
-    const aot = this.options.compiler.aot;
-    if (!aot || !aot.enabled) return;
+    if (this.compiledProjectHooks) throw migrationError();
+    validatePackagerOptions(this.options);
     this.dispatchEvent(new CustomEvent('compile-progress', {detail: {progress: 0}}));
-    const result = await compileProject(
-      this.project.arrayBuffer,
-      this.options.compiler,
-      this.compiledProjectHooks
-    );
-    if (this.compiledProjectHooks.signManifest && !this.compiledProjectHooks.signatureVerifierSource) {
-      throw new Error('Signed compiled projects require compiledProjectHooks.signatureVerifierSource');
-    }
-    this.ensureNotAborted();
-    this.project = {
-      ...this.project,
-      arrayBuffer: result.packageData,
-      type: 'sb3c'
-    };
-    this.compiledProjectRuntime = {
-      accessorSource: result.accessorSidecar ? result.accessorSidecar.content : null,
-      bindingName: result.accessorSidecar ? result.accessorSidecar.bindingName : null,
-      signed: Boolean(this.compiledProjectHooks.signManifest),
-      signatureVerifierSource: this.compiledProjectHooks.signatureVerifierSource || null,
-      runtimeScripts: result.sidecars
-        .filter(sidecar => sidecar.execution === 'global-script')
-        .map(sidecar => ({name: sidecar.name, content: sidecar.content}))
-    };
-    this.dispatchEvent(new CustomEvent('compile-progress', {
-      detail: {progress: 1, diagnostics: result.diagnostics}
-    }));
+    this.specializedBuild = await prepareProject(this.project.arrayBuffer, {...this.options.compiler, extensions: this.options.extensions});
+    this.project = {...this.project, arrayBuffer: this.specializedBuild.resourceData, type: 'specialized'};
   }
 
   computeWindowSize () {
@@ -1050,155 +1006,45 @@ cd "$(dirname "$0")"
   }
 
   async generateGetProjectData () {
-    const result = [];
-    let getProjectDataFunction = '';
-    let isZip = false;
-    let storageProgressStart;
-    let storageProgressEnd;
-
-    if (this.options.target === 'html') {
-      isZip = this.project.type !== 'blob';
-      storageProgressStart = PROGRESS_FETCHED_COMPRESSED;
-      storageProgressEnd = PROGRESS_EXTRACTED_COMPRESSED;
-
-      const projectData = new Uint8Array(this.project.arrayBuffer);
-
-      // keep this up-to-date with base85.js
-      result.push(`
-      <script>
-      const getBase85DecodeValue = (code) => {
-        if (code === 0x28) code = 0x3c;
-        if (code === 0x29) code = 0x3e;
-        return code - 0x2a;
-      };
-      const base85decode = (str, outBuffer, outOffset) => {
-        const view = new DataView(outBuffer, outOffset, Math.floor(str.length / 5 * 4));
-        for (let i = 0, j = 0; i < str.length; i += 5, j += 4) {
-          view.setUint32(j, (
-            getBase85DecodeValue(str.charCodeAt(i + 4)) * 85 * 85 * 85 * 85 +
-            getBase85DecodeValue(str.charCodeAt(i + 3)) * 85 * 85 * 85 +
-            getBase85DecodeValue(str.charCodeAt(i + 2)) * 85 * 85 +
-            getBase85DecodeValue(str.charCodeAt(i + 1)) * 85 +
-            getBase85DecodeValue(str.charCodeAt(i))
-          ), true);
-        }
-      };
-      let projectDecodeBuffer = new ArrayBuffer(${Math.ceil(projectData.length / 4) * 4});
-      let projectDecodeIndex = 0;
-      const decodeChunk = (size) => {
-        try {
-          if (document.currentScript.tagName.toUpperCase() !== 'SCRIPT') throw new Error('document.currentScript is not a script');
-          base85decode(document.currentScript.getAttribute("data"), projectDecodeBuffer, projectDecodeIndex);
-          document.currentScript.remove();
-          projectDecodeIndex += size;
-          setProgress(interpolate(${PROGRESS_LOADED_SCRIPTS}, ${PROGRESS_FETCHED_COMPRESSED}, projectDecodeIndex / ${projectData.length}));
-        } catch (e) {
-          handleError(e);
-        }
-      };
-      </script>`);
-
-      // To avoid unnecessary padding, this should be a multiple of 4.
-      const CHUNK_SIZE = 1024 * 64;
-
-      for (let i = 0; i < projectData.length; i += CHUNK_SIZE) {
-        const projectChunk = projectData.subarray(i, i + CHUNK_SIZE);
-        const base85 = encode(projectChunk);
-        result.push(`<script data="${base85}">decodeChunk(${projectChunk.length})</script>\n`);
-      }
-
-      getProjectDataFunction = `() => {
-        const buffer = projectDecodeBuffer;
-        projectDecodeBuffer = null; // Allow GC
-        return Promise.resolve(new Uint8Array(buffer, 0, ${projectData.length}));
-      }`;
-    } else {
-      let src;
-      if (this.project.type === 'blob' || this.project.type === 'sb3c' ||
-          this.options.target === 'zip-one-asset') {
-        isZip = this.project.type !== 'blob';
-        src = './project.zip';
-        storageProgressStart = PROGRESS_FETCHED_COMPRESSED;
-        storageProgressEnd = PROGRESS_EXTRACTED_COMPRESSED;
-      } else {
-        src = './assets/project.json';
-        storageProgressStart = PROGRESS_FETCHED_PROJECT_JSON;
-        storageProgressEnd = PROGRESS_FETCHED_ASSETS;
-      }
-
-      getProjectDataFunction = `() => new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.onload = () => {
-          resolve(xhr.response);
-        };
-        xhr.onerror = () => {
-          if (location.protocol === 'file:') {
-            reject(new Error('Zip environment must be used on a website, not on a local file. To fix this error, use the "Plain HTML" environment instead.'));
-          } else {
-            reject(new Error('Request to load project data failed.'));
-          }
-        };
-        xhr.onprogress = (e) => {
-          if (e.lengthComputable) {
-            setProgress(interpolate(${PROGRESS_LOADED_SCRIPTS}, ${storageProgressStart}, e.loaded / e.total));
-          }
-        };
-        xhr.responseType = 'arraybuffer';
-        xhr.open('GET', ${JSON.stringify(src)});
-        xhr.send();
-      })`;
+    const embedded = this.options.target === 'html';
+    let data = '';
+    if (embedded) {
+      const bytes = new Uint8Array(this.project.arrayBuffer);
+      const chunks = [];
+      for (let i = 0; i < bytes.length; i += 16384) chunks.push(String.fromCharCode(...bytes.subarray(i, i + 16384)));
+      data = typeof btoa === 'function' ? btoa(chunks.join('')) : Buffer.from(bytes).toString('base64');
     }
-
-    result.push(`
+    return `${embedded ? `<script type="application/octet-stream" id="player-resources">${data}</script>` : ''}
     <script>
-      const getProjectData = (function() {
+      const getProjectData = async () => {
+        const element = document.getElementById('player-resources');
+        let bytes;
+        if (element) {
+          bytes = Uint8Array.from(atob(element.textContent), char => char.charCodeAt(0));
+          element.remove();
+        } else {
+          bytes = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', './project.zip'); xhr.responseType = 'arraybuffer';
+            xhr.onload = () => {
+              if ((xhr.status === 0 || xhr.status === 200) && xhr.response) resolve(xhr.response);
+              else reject(new Error('Could not load player resources'));
+            };
+            xhr.onerror = () => reject(new Error('Could not load player resources. Web ZIP files require a web server.'));
+            xhr.send();
+          });
+        }
+        const zip = await Scaffolding.JSZip.loadAsync(bytes);
         const storage = scaffolding.storage;
-        storage.onprogress = (total, loaded) => {
-          setProgress(interpolate(${storageProgressStart}, ${storageProgressEnd}, loaded / total));
-        };
-        ${isZip ? `
-        let zip;
-        // Allow zip to be GC'd after project loads
-        vm.runtime.on('PROJECT_LOADED', () => (zip = null));
-        const findFileInZip = (path) => zip.file(path) || zip.file(new RegExp("^([^/]*/)?" + path + "$"))[0];
-        storage.addHelper({
-          load: (assetType, assetId, dataFormat) => {
-            if (!zip) {
-              throw new Error('Zip is not loaded or has been closed');
-            }
-            const path = assetId + '.' + dataFormat;
-            const file = findFileInZip(path);
-            if (!file) {
-              console.error('Asset is not in zip: ' + path);
-              return Promise.resolve(null);
-            }
-            return file
-              .async('uint8array')
-              .then((data) => storage.createAsset(assetType, dataFormat, data, assetId));
-          }
-        });
-        return () => (${getProjectDataFunction})().then(async (data) => {
-          zip = await Scaffolding.JSZip.loadAsync(data);
-          const file = findFileInZip('project.json');
-          if (!file) {
-            throw new Error('project.json is not in zip');
-          }
-          ${this.project.type === 'sb3c' ? 'return data;' : "return file.async('arraybuffer');"}
-        });` : `
-        storage.addWebStore(
-          [
-            storage.AssetType.ImageVector,
-            storage.AssetType.ImageBitmap,
-            storage.AssetType.Sound,
-            storage.AssetType.Font
-          ].filter(i => i),
-          (asset) => new URL('./assets/' + asset.assetId + '.' + asset.dataFormat, location).href
-        );
-        return ${getProjectDataFunction};`}
-      })();
-    </script>`);
-
-    return result;
+        storage.addHelper({load: async (type, id, format) => {
+          const file = zip.file(id + '.' + format);
+          return file ? storage.createAsset(type, format, await file.async('uint8array'), id) : null;
+        }});
+        const project = zip.file('project.json');
+        if (!project) throw new Error('Player resources are incomplete');
+        return project.async('string');
+      };
+    </script>`;
   }
 
   async generateFavicon () {
@@ -1221,54 +1067,6 @@ cd "$(dirname "$0")"
     return `url(${data}) ${this.options.cursor.center.x} ${this.options.cursor.center.y}, auto`;
   }
 
-  async generateExtensionURLs () {
-    const dispatchProgress = (progress) => this.dispatchEvent(new CustomEvent('fetch-extensions', {
-      detail: {
-        progress
-      }
-    }));
-
-    const shouldTryToFetch = (url) => {
-      if (!this.options.bakeExtensions) {
-        return false;
-      }
-      try {
-        const parsed = new URL(url);
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-      } catch (e) {
-        return false;
-      }
-    };
-
-    /** @type {string[]} */
-    const allURLs = this.options.extensions;
-    const unfetchableURLs = allURLs.filter((url) => !shouldTryToFetch(url));
-    const urlsToFetch = allURLs.filter((url) => shouldTryToFetch(url));
-    const finalURLs = [...unfetchableURLs];
-
-    if (urlsToFetch.length !== 0) {
-      for (let i = 0; i < urlsToFetch.length; i++) {
-        dispatchProgress(i / urlsToFetch.length);
-        const url = urlsToFetch[i];
-        try {
-          const source = await Adapter.fetchExtensionScript(url);
-          // Wrap the extension in an IIFE so that extensions written for the sandbox are less
-          // likely to cause issues in an unsandboxed environment due to global pollution or
-          // overriding Scratch.*
-          const wrappedSource = `(function(Scratch) { ${source} })(Scratch);`
-          const dataURI = `data:text/javascript;,${encodeURIComponent(wrappedSource)}`;
-          finalURLs.push(dataURI);
-        } catch (e) {
-          console.warn('Could not bake extension', url, e);
-          finalURLs.push(url);
-        }
-      }
-      dispatchProgress(1);
-    }
-
-    return finalURLs;
-  }
-
   async package () {
     if (!Adapter) {
       throw new Error('Missing adapter');
@@ -1282,14 +1080,13 @@ cd "$(dirname "$0")"
     this.ensureNotAborted();
     await this.loadResources();
     this.ensureNotAborted();
-    const html = encodeBigString`<!DOCTYPE html>
+    let html = encodeBigString`<!DOCTYPE html>
 <!-- Created with ${WEBSITE} -->
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <!-- We only include this to explicitly loosen the CSP of various packager environments. It does not provide any security. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' data: blob:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:">
   <title>${escapeXML(this.options.app.windowTitle)}</title>
   <style>
     body {
@@ -1486,10 +1283,11 @@ cd "$(dirname "$0")"
     };
     const interpolate = (a, b, t) => a + t * (b - a);
 
+    let scaffolding, vm;
     try {
       setProgress(${PROGRESS_LOADED_SCRIPTS});
 
-      const scaffolding = new Scaffolding.Scaffolding();
+      scaffolding = new Scaffolding.Scaffolding();
       scaffolding.width = ${this.options.stageWidth};
       scaffolding.height = ${this.options.stageHeight};
       scaffolding.resizeMode = ${JSON.stringify(this.options.resizeMode)};
@@ -1498,16 +1296,7 @@ cd "$(dirname "$0")"
       scaffolding.setup();
       scaffolding.appendTo(appElement);
 
-      const vm = scaffolding.vm;
-      window.scaffolding = scaffolding;
-      window.vm = scaffolding.vm;
-      window.Scratch = {
-        vm,
-        renderer: vm.renderer,
-        audioEngine: vm.runtime.audioEngine,
-        bitmapAdapter: vm.runtime.v2BitmapAdapter,
-        videoProvider: vm.runtime.ioDevices.video.provider
-      };
+      vm = scaffolding.vm;
 
       scaffolding.setUsername(${JSON.stringify(this.options.username)}.replace(/#/g, () => Math.floor(Math.random() * 10)));
       scaffolding.setAccentColor(${JSON.stringify(this.options.appearance.accent)});
@@ -1655,14 +1444,6 @@ cd "$(dirname "$0")"
         ScaffoldingAddons.run(scaffolding, ${JSON.stringify(this.getAddonOptions())});
       }
 
-      scaffolding.setExtensionSecurityManager({
-        getSandboxMode: () => 'unsandboxed',
-        canLoadExtensionFromProject: () => true
-      });
-      for (const extension of ${JSON.stringify(await this.generateExtensionURLs())}) {
-        vm.extensionManager.loadExtensionURL(extension);
-      }
-
       ${this.options.closeWhenStopped ? `
       vm.runtime.on('PROJECT_RUN_STOP', () => {
         if (!vm.isPaused || !vm.isPaused()) {
@@ -1670,7 +1451,6 @@ cd "$(dirname "$0")"
         }
       });` : ''}
 
-      ${this.options.target.startsWith('nwjs-') ? `
       if (typeof nw !== 'undefined') {
         const win = nw.Window.get();
         win.on('new-win-policy', (frame, url, policy) => {
@@ -1686,41 +1466,18 @@ cd "$(dirname "$0")"
             document.exitFullscreen();
           }
         });
-      }` : ''}
+      }
     } catch (e) {
       handleError(e);
     }
   `)}</script>
-  ${this.options.custom.js ? `<script>
-    try {
-      ${this.options.custom.js}
-    } catch (e) {
-      handleError(e);
-    }
-  </script>` : ''}
   ${await this.generateGetProjectData()}
-  ${this.project.type === 'sb3c' ? this.compiledProjectRuntime.runtimeScripts
-    .map(script => `<script data-sb3c-runtime=${JSON.stringify(script.name)}>${
-      script.content.replace(/<\/script>/gi, "</scri'+'pt>")
-    }</script>`)
-    .join('\n') : ''}
   <script>
+    ${facadeSource}
     const run = async () => {
       const projectData = await getProjectData();
-      ${this.project.type === 'sb3c' ? `
-      let bindings = {};
-      ${this.compiledProjectRuntime.accessorSource ? `
-      const accessorModule = await import(${JSON.stringify(
-        `data:text/javascript;charset=utf-8,${encodeURIComponent(this.compiledProjectRuntime.accessorSource)}`
-      )});
-      bindings = {[accessorModule.bindingName]: accessorModule.accessor};` : ''}
-      await scaffolding.loadCompiledProjectPackage(projectData, {
-        bindings,
-        requireIntegrity: true,
-        requireSignature: ${this.compiledProjectRuntime.signed},
-        ${this.compiledProjectRuntime.signatureVerifierSource ?
-          `verifyIntegritySignature: (${this.compiledProjectRuntime.signatureVerifierSource})` : ''}
-      });` : 'await scaffolding.loadProject(projectData);'}
+      await scaffolding.loadProject(projectData);
+      playerLoaded();
       setProgress(1);
       loadingScreen.hidden = true;
       if (${this.options.autoplay}) {
@@ -1734,12 +1491,25 @@ cd "$(dirname "$0")"
         launchScreen.focus();
       }
     };
-    run().catch(handleError);
+    run().catch(error => { playerError(error); handleError(error); });
   </script>
 </body>
 </html>
 `;
     this.ensureNotAborted();
+    const boot = [];
+    let page = new TextDecoder().decode(html).replace(/<script([^>]*)>([\s\S]*?)<\/script>/gi, (tag, attributes, source) => {
+      if (/type="application\/octet-stream"/.test(attributes)) return tag;
+      if (!/\bsrc=/.test(attributes)) boot.push(source);
+      return '';
+    });
+    const result = await finishProject(this.specializedBuild, boot.join('\n'), {addons: this.getAddonOptions(), sourceMap: this.options.compiler.sourceMap === true});
+    this.script = COPYRIGHT_HEADER + '\n' + result.code;
+    this.buildResult = result;
+    const script = this.options.target === 'html' ? `<script>${this.script.replace(/<\/script/gi, '<\\/script')}</script>` : '<script src="script.js"></script>';
+    page = page.replace('</body>', () => script + '\n</body>');
+    html = new TextEncoder().encode(page);
+    this.dispatchEvent(new CustomEvent('compile-progress', {detail: {progress: 1, diagnostics: result.diagnostics}}));
 
     if (this.options.target !== 'html') {
       let zip;
@@ -1814,8 +1584,7 @@ Packager.usesUnsafeOptions = (options) => {
   const getUnsafeOptions = (options) => [
     options.custom,
     options.extensions,
-    options.cloudVariables.unsafeCloudBehaviors,
-    options.compiler.aot.javascriptObfuscatorOptions.debugProtection
+    options.cloudVariables.unsafeCloudBehaviors
   ];
   return JSON.stringify(getUnsafeOptions(defaultOptions)) !== JSON.stringify(getUnsafeOptions(options));
 };
@@ -1836,8 +1605,7 @@ Packager.DEFAULT_OPTIONS = () => ({
   closeWhenStopped: false,
   projectId: '',
   custom: {
-    css: '',
-    js: ''
+    css: ''
   },
   appearance: {
     background: '#000000',
@@ -1872,35 +1640,7 @@ Packager.DEFAULT_OPTIONS = () => ({
   compiler: {
     enabled: true,
     warpTimer: false,
-    aot: {
-      enabled: true,
-      obfuscate: true,
-      javascriptObfuscator: false,
-      shortIds: true,
-      accessorName: '__vmAccess',
-      seed: '',
-      javascriptObfuscatorOptions: {
-        compact: true,
-        controlFlowFlattening: false,
-        controlFlowFlatteningThreshold: 0.75,
-        deadCodeInjection: false,
-        deadCodeInjectionThreshold: 0.4,
-        debugProtection: false,
-        debugProtectionInterval: 0,
-        disableConsoleOutput: false,
-        identifierNamesGenerator: 'hexadecimal',
-        numbersToExpressions: false,
-        selfDefending: false,
-        simplify: true,
-        splitStrings: false,
-        splitStringsChunkLength: 10,
-        stringArray: true,
-        stringArrayEncoding: 'none',
-        stringArrayThreshold: 0.75,
-        transformObjectKeys: false,
-        unicodeEscapeSequence: false
-      }
-    }
+    seed: ''
   },
   packagedRuntime: true,
   target: 'html',
@@ -1923,7 +1663,6 @@ Packager.DEFAULT_OPTIONS = () => ({
     cloudHost: 'wss://clouddata.turbowarp.org',
     custom: {},
     specialCloudBehaviors: false,
-    unsafeCloudBehaviors: false,
   },
   cursor: {
     type: 'auto',
@@ -1940,7 +1679,6 @@ Packager.DEFAULT_OPTIONS = () => ({
     onError: 'warning'
   },
   extensions: [],
-  bakeExtensions: true,
   maxTextureDimension: 2048
 });
 

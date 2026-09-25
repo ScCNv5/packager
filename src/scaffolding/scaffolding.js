@@ -79,17 +79,33 @@ class Scaffolding extends EventTarget {
     this._topControls = new ControlBar();
     this._layers.appendChild(this._topControls.root);
 
-    document.addEventListener('mousemove', this._onmousemove.bind(this));
-    this._canvas.addEventListener('mousedown', this._onmousedown.bind(this));
-    document.addEventListener('mouseup', this._onmouseup.bind(this));
-    this._canvas.addEventListener('touchstart', this._ontouchstart.bind(this));
-    document.addEventListener('touchmove', this._ontouchmove.bind(this));
-    document.addEventListener('touchend', this._ontouchend.bind(this));
-    this._canvas.addEventListener('contextmenu', this._oncontextmenu.bind(this));
-    this._canvas.addEventListener('wheel', this._onwheel.bind(this));
-    document.addEventListener('keydown', this._onkeydown.bind(this));
-    document.addEventListener('keyup', this._onkeyup.bind(this));
-    window.addEventListener('resize', this._onresize.bind(this));
+    this._listeners = [];
+    this._listen(document, 'mousemove', this._onmousemove.bind(this));
+    this._listen(this._canvas, 'mousedown', this._onmousedown.bind(this));
+    this._listen(document, 'mouseup', this._onmouseup.bind(this));
+    this._listen(this._canvas, 'touchstart', this._ontouchstart.bind(this));
+    this._listen(document, 'touchmove', this._ontouchmove.bind(this));
+    this._listen(document, 'touchend', this._ontouchend.bind(this));
+    this._listen(this._canvas, 'contextmenu', this._oncontextmenu.bind(this));
+    this._listen(this._canvas, 'wheel', this._onwheel.bind(this));
+    this._listen(document, 'keydown', this._onkeydown.bind(this));
+    this._listen(document, 'keyup', this._onkeyup.bind(this));
+    this._listen(window, 'resize', this._onresize.bind(this));
+  }
+
+  _listen (element, type, listener, options) {
+    element.addEventListener(type, listener, options);
+    this._listeners.push(() => element.removeEventListener(type, listener, options));
+  }
+
+  _specializedDispose () {
+    this._disposed = true;
+    this._listeners.splice(0).forEach(remove => remove());
+    for (const provider of this.cloudManager ? this.cloudManager.providers : []) if (provider.dispose) provider.dispose();
+    if (this.videoProvider) this.videoProvider.disableVideo();
+    this._cancelDragTimeout();
+    if (this._question) this._question.destroy();
+    this._root.remove();
   }
 
   _addLayer (el) {
@@ -452,33 +468,21 @@ class Scaffolding extends EventTarget {
   }
 
   loadProject (data) {
+    if (this._disposed) return Promise.reject(new Error('Player disposed'));
     return this.vm.loadProject(data)
       .then(() => {
+        if (this._disposed) { this.vm.clear(); return; }
         this.vm.setCloudProvider(this.cloudManager);
         this.cloudManager.projectReady();
         this.renderer.draw();
         // Render again after a short delay because some costumes are loaded async
         setTimeout(() => {
-          this.renderer.draw();
+          if (!this._disposed) this.renderer.draw();
         });
 
         if (this.shouldConnectPeripherals) {
           this._connectPeripherals();
         }
-      });
-  }
-
-  loadCompiledProjectPackage (data, options) {
-    if (typeof this.vm.loadCompiledProjectPackage !== 'function') {
-      return Promise.reject(new Error('This Scratch VM does not support compiled project packages'));
-    }
-    return this.vm.loadCompiledProjectPackage(data, options)
-      .then(() => {
-        this.vm.setCloudProvider(this.cloudManager);
-        this.cloudManager.projectReady();
-        this.renderer.draw();
-        setTimeout(() => this.renderer.draw());
-        if (this.shouldConnectPeripherals) this._connectPeripherals();
       });
   }
 

@@ -17,7 +17,7 @@ export default function ({ scaffolding }) {
 
     if (paused) {
       audioContextStateChange = audioContextStateChange.then(() => {
-        return vm.runtime.audioEngine.audioContext.suspend();
+        return vm.runtime.audioEngine && vm.runtime.audioEngine.audioContext.suspend();
       });
       if (!vm.runtime.ioDevices.clock._paused) {
         vm.runtime.ioDevices.clock.pause();
@@ -40,7 +40,7 @@ export default function ({ scaffolding }) {
       vm.runtime.emit('RUNTIME_PAUSED');
     } else {
       audioContextStateChange = audioContextStateChange.then(() => {
-        return vm.runtime.audioEngine.audioContext.resume();
+        return vm.runtime.audioEngine && vm.runtime.audioEngine.audioContext.resume();
       });
       vm.runtime.ioDevices.clock.resume();
 

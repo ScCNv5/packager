@@ -19,7 +19,8 @@ class GenerateServiceWorkerPlugin {
       const assetNames = Array.from(allAssetNames)
         .filter((name) => {
           if (name.endsWith('.map')) return false;
-          return name.startsWith('assets/') || name.startsWith('js/') || CACHE_PAGES.includes(name);
+          return name.startsWith('assets/') || name.startsWith('js/') || CACHE_PAGES.includes(name) ||
+            ['specialized-worker.js', 'rollup.browser.js', 'bindings_wasm_bg.wasm'].includes(name);
         });
       const stringifiedAssets = JSON.stringify(assetNames);
       const hash = crypto.createHash('sha256').update(stringifiedAssets).digest('hex');

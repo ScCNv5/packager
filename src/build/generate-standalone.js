@@ -1,18 +1,12 @@
 const pathUtil = require('path');
 const fs = require('fs');
-const glob = require('glob');
 
 const dist = pathUtil.join(__dirname, '..', '..', 'dist');
 console.log(`dist: ${dist}`);
 
-const scaffoldingFiles = glob.sync('scaffolding/*.js', {
-  cwd: dist
-});
-console.log(`scaffolding: ${scaffoldingFiles.join(', ')}`);
-const scaffoldingAssets = {};
-for (const path of scaffoldingFiles) {
-  if (path.includes('extension-worker')) continue;
-  scaffoldingAssets[path] = fs.readFileSync(pathUtil.join(dist, path), 'utf-8');
+const buildAssets = {};
+for (const name of ['specialized-worker.js', 'rollup.browser.js', 'bindings_wasm_bg.wasm']) {
+  buildAssets[name] = fs.readFileSync(pathUtil.join(dist, name)).toString('base64');
 }
 
 const indexPath = pathUtil.join(dist, 'index.html');
@@ -29,13 +23,14 @@ console.log(`favicon.ico: ${faviconData ? faviconPath : 'none'}`);
 
 const makeSafeForInlineScript = (content) => content.replace(/<\/script>/g, '\\u003c/script>');
 let standaloneJS = '';
-standaloneJS += Object.entries(scaffoldingAssets).map(([name, content]) => (
-  `<script type="p4-standalone-asset" data-name="${name}">${makeSafeForInlineScript(content)}</script>`
+standaloneJS += Object.entries(buildAssets).map(([name, content]) => (
+  `<script type="p4-standalone-asset" data-name="${name}">${content}</script>`
 )).join('');
 standaloneJS += `<script>
 window.__ASSETS__ = {};
 for (const el of Array.from(document.querySelectorAll('script[type="p4-standalone-asset"]'))) {
-  __ASSETS__[el.dataset.name] = el.textContent;
+  __ASSETS__[el.dataset.name] = el.dataset.name.endsWith('.wasm') ? el.textContent :
+    new TextDecoder().decode(Uint8Array.from(atob(el.textContent), c => c.charCodeAt(0)));
   el.remove();
 }
 </script>`;

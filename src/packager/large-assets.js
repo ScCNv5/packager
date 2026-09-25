@@ -10,15 +10,11 @@
 // match; this is just for the progress bar. estimatedSize is optional and can be omitted.
 // Make sure to use size estimates from production builds, not development ones.
 
-// useBuildId is used for various cache related things. It shouldn't be changed.
-
 const externalFile = (name) => [
   // Hopefully one of these URLs will not be blocked.
   `https://packagerdata.turbowarp.org/${name}`,
   `https://blobs.turbowarp.xyz/${name}`
 ];
-
-const relativeScaffolding = (name) => `scaffolding/${name}`;
 
 export default {
   'nwjs-win64': {
@@ -85,20 +81,5 @@ export default {
     src: externalFile('steamworks.js-0.3.2.zip'),
     sha256: 'fd8bc80a97cd880d71113dfc5f81b124b6e212335393db73e3df168c5c546fbc',
     estimatedSize: 3279554,
-  },
-  scaffolding: {
-    src: relativeScaffolding('scaffolding-full.js'),
-    estimatedSize: 4564032,
-    useBuildId: true
-  },
-  'scaffolding-min': {
-    src: relativeScaffolding('scaffolding-min.js'),
-    estimatedSize: 2530463,
-    useBuildId: true
-  },
-  addons: {
-    src: relativeScaffolding('addons.js'),
-    estimatedSize: 19931,
-    useBuildId: true
   }
 };

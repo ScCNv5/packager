@@ -5,6 +5,10 @@ import fetch from 'cross-fetch';
 import {name} from '../../../package.json';
 import defaultIcon from '../images/default-icon.png';
 import Image from './image';
+import {linkSpecialized, prepareExtension, inspectExtension} from 'specialized-link';
+import {PNG} from 'pngjs';
+import {Icns, IcnsImage} from '@fiahfy/icns';
+import {DOMParser, DOMImplementation, XMLSerializer} from '@xmldom/xmldom';
 
 const readFile = promisify(fs.readFile);
 const writeFile = promisify(fs.writeFile);
@@ -36,16 +40,40 @@ const nodeBufferToArrayBuffer = (buffer) => buffer.buffer.slice(buffer.byteOffse
 const arrayBufferToNodeBuffer = (buffer) => Buffer.from(buffer);
 
 class NodeAdapter {
+  parseXML (text) { return new DOMParser().parseFromString(text, 'text/xml'); }
+  createXMLDocument (name) { return new DOMImplementation().createDocument(null, name); }
+  serializeXML (document) { return new XMLSerializer().serializeToString(document); }
+  async pngToAppleICNS (bytes) {
+    const source = PNG.sync.read(Buffer.from(bytes));
+    const icon = new Icns();
+    const formats = [['ic04', 16], ['ic07', 128], ['ic08', 256], ['ic09', 512], ['ic10', 1024],
+      ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512]];
+    for (const [type, size] of formats) {
+      if (size !== 16 && (source.width < size || source.height < size)) continue;
+      const output = new PNG({width: size, height: size});
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        const x0 = Math.floor(x * source.width / size), x1 = Math.max(x0 + 1, Math.floor((x + 1) * source.width / size));
+        const y0 = Math.floor(y * source.height / size), y1 = Math.max(y0 + 1, Math.floor((y + 1) * source.height / size));
+        const sums = [0, 0, 0]; let alpha = 0, count = 0;
+        for (let sy = y0; sy < y1; sy++) for (let sx = x0; sx < x1; sx++) {
+          const offset = (sy * source.width + sx) * 4, a = source.data[offset + 3];
+          for (let channel = 0; channel < 3; channel++) sums[channel] += source.data[offset + channel] * a;
+          alpha += a; count++;
+        }
+        const offset = (y * size + x) * 4;
+        for (let channel = 0; channel < 3; channel++) output.data[offset + channel] = alpha ? Math.round(sums[channel] / alpha) : 0;
+        output.data[offset + 3] = Math.round(alpha / count);
+      }
+      icon.append(await IcnsImage.fromPNG(PNG.sync.write(output), type));
+    }
+    return icon.data;
+  }
+  linkSpecialized (options) { return linkSpecialized(options); }
+  prepareExtension (options) { return prepareExtension(options); }
+  inspectExtension (code) { return inspectExtension(code); }
   async getCachedAsset (asset) {
     const urls = asset.src;
     const src = Array.isArray(urls) ? urls[0] : urls;
-
-    if (src.startsWith('scaffolding/')) {
-      const file = safeJoin(__dirname, src);
-      if (file) {
-        return readFile(file, 'utf-8');
-      }
-    }
 
     if (src.startsWith('https:')) {
       const cachePath = await getCachePath(asset);

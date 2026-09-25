@@ -1,6 +1,7 @@
 const run = ({ scaffolding }) => {
   const canvas = scaffolding._canvas;
   const vm = scaffolding.vm;
+  scaffolding._listeners.push(() => { if (document.pointerLockElement === canvas) document.exitPointerLock(); });
   const mouse = vm.runtime.ioDevices.mouse;
   let isLocked = false;
 
@@ -21,7 +22,7 @@ const run = ({ scaffolding }) => {
       vm.postIOData('mouse', data);
     }
   };
-  document.addEventListener("mousedown", (e) => {
+  scaffolding._listen(document, "mousedown", (e) => {
     if (canvas.contains(e.target)) {
       e.stopPropagation();
       if (isLocked) {
@@ -31,7 +32,7 @@ const run = ({ scaffolding }) => {
       }
     }
   }, true);
-  document.addEventListener("mouseup", (e) => {
+  scaffolding._listen(document, "mouseup", (e) => {
     e.stopPropagation();
     if (isLocked) {
       postMouseData(e, false);
@@ -39,23 +40,23 @@ const run = ({ scaffolding }) => {
       canvas.requestPointerLock();
     }
   }, true);
-  document.addEventListener("mousemove", (e) => {
+  scaffolding._listen(document, "mousemove", (e) => {
     e.stopPropagation();
     if (isLocked) {
       postMouseData(e);
     }
   }, true);
 
-  scaffolding.addEventListener('PROJECT_RUN_START', () => {
+  scaffolding._listen(scaffolding, 'PROJECT_RUN_START', () => {
     if (!isLocked) {
       canvas.requestPointerLock();
     }
   });
 
-  document.addEventListener('pointerlockchange', () => {
+  scaffolding._listen(document, 'pointerlockchange', () => {
     isLocked = document.pointerLockElement === canvas;
   });
-  document.addEventListener('pointerlockerror', (e) => {
+  scaffolding._listen(document, 'pointerlockerror', (e) => {
     console.error('Pointer lock error', e);
   });
 

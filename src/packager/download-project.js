@@ -1,5 +1,6 @@
 import optimizeSb3Json from './minify/sb3';
 import {downloadProjectFromBuffer} from '@turbowarp/sbdl';
+import {rejectLegacyProject} from './compile-project';
 
 const unknownAnalysis = () => ({
   stageVariables: [],
@@ -97,6 +98,7 @@ const mutateScratch3InPlace = (projectData) => {
 };
 
 export const downloadProject = async (projectData, progressCallback = () => {}, signal) => {
+  await rejectLegacyProject(projectData);
   let analysis = unknownAnalysis();
 
   const options = {

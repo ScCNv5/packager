@@ -1,7 +1,7 @@
 <script>
   import Section from './Section.svelte';
   import Button from './Button.svelte';
-  import {CannotAccessProjectError, OutdatedPackagerError, UnknownNetworkError, UserError} from '../common/errors';
+  import {CannotAccessProjectError, UnknownNetworkError, UserError} from '../common/errors';
   import {error} from './stores';
   import {FEEDBACK_PRIMARY} from '../packager/brand';
   import {_} from '../locales/';
@@ -54,7 +54,6 @@
     }
   };
 
-  const refresh = () => location.reload();
 </script>
 
 <style>
@@ -107,13 +106,6 @@
         </p>
         <p>
           <Button on:click={closeModal} text={$_('p4.close')} />
-        </p>
-      {:else if $error instanceof OutdatedPackagerError}
-        <p>{$_('p4.outdated')}</p>
-        <p class="technical">{$error}</p>
-        <p>
-          <Button on:click={refresh} text={$_('p4.refresh')} />
-          <Button secondary on:click={closeModal} text={$_('p4.close')} />
         </p>
       {:else if $error instanceof CannotAccessProjectError}
         <p>

@@ -4,11 +4,11 @@ import * as ExtendedJSON from '@turbowarp/json';
 import merge from './merge';
 import serialize from './serialize';
 
-const writablePersistentStore = (key, defaultValue) => {
+const writablePersistentStore = (key, defaultValue, restore = value => value) => {
   let value = ExtendedJSON.parse(ExtendedJSON.stringify(defaultValue));
   const localValue = ExtendedJSON.parse(localStorage.getItem(key));
   if (localValue) {
-    value = merge(localValue, value);
+    value = merge(restore(localValue), value);
   }
   const store = writable(value, () => {
     const unsubscribe = store.subscribe(value => {

@@ -83,7 +83,12 @@
         "username": "用戶名稱（以「#」代表一個隨機數）",
         "warpTimer": "防卡死",
         "zip": "Zip（用於網站的最佳選擇）",
-        "zip-one-asset": "Zip，封裝所有素材（不推薦）"
+        "zip-one-asset": "Zip，封裝所有素材（不推薦）",
+        "specializedProtection": "程式專用化保護",
+        "specializedProtectionDescription": "作品腳本與執行環境聯合編譯，產生此作品專用的離線播放器。",
+        "buildSeed": "建置 seed",
+        "randomBuildSeed": "每次建置隨機產生",
+        "customExtensionsSecurity": "擴充功能及程式碼相依套件會在建置時固定，並在獨立 Worker 中執行。不支援需要存取完整 VM 的擴充功能。"
     },
     "p4": {
         "close": "關閉",

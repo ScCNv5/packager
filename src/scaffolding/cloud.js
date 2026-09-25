@@ -99,6 +99,14 @@ class WebSocketProvider {
     this.openConnection();
   }
 
+  dispose () {
+    clearTimeout(this.reconnectTimeout);
+    if (this.ws) {
+      this.ws.onclose = this.ws.onmessage = this.ws.onopen = this.ws.onerror = null;
+      this.ws.close();
+    }
+  }
+
   setProjectId (id) {
     this.projectId = id;
     this.closeAndReconnect();
@@ -281,6 +289,10 @@ class LocalStorageProvider {
   handleUpdateVariable (name, value) {
     this.variables[name] = value;
     this.storeToLocalStorage();
+  }
+
+  dispose () {
+    window.removeEventListener('storage', this.handleStorageEvent);
   }
 }
 

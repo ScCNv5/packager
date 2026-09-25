@@ -418,98 +418,11 @@
     "enableCompiler": {
       "string": "Enable Compiler"
     },
-    "aotCompile": {
-      "string": "Enable compiled project mode"
-    },
-    "compiledProtection": {
-      "string": "Compiled Project Protection"
-    },
-    "compiledProtectionDescription": {
-      "string": "A featured build mode of SB3C Packager: compile the block graph ahead of time, optionally replace VM member accesses, and apply additional JavaScript transformations."
-    },
-    "obfuscateCompiledProject": {
-      "string": "Obfuscate compiled project"
-    },
-    "javascriptObfuscator": {
-      "string": "Apply JavaScript Obfuscator to compiled factories"
-    },
-    "javascriptObfuscatorOptions": {
-      "string": "JavaScript Obfuscator options"
-    },
-    "compactOutput": {
-      "string": "Compact output"
-    },
     "simplifyCode": {
       "string": "Simplify and transform expressions"
     },
-    "identifierNamesGenerator": {
-      "string": "Identifier style"
-    },
-    "stringArray": {
-      "string": "Move string literals into encoded arrays"
-    },
-    "stringArrayEncoding": {
-      "string": "String encoding"
-    },
     "encodingNone": {
       "string": "No additional encoding"
-    },
-    "transformationThreshold": {
-      "string": "Transformation probability (0–1)"
-    },
-    "controlFlowFlattening": {
-      "string": "Control-flow flattening"
-    },
-    "deadCodeInjection": {
-      "string": "Dead-code injection"
-    },
-    "splitStrings": {
-      "string": "Split string literals"
-    },
-    "splitStringsChunkLength": {
-      "string": "String chunk length"
-    },
-    "numbersToExpressions": {
-      "string": "Convert numbers to expressions"
-    },
-    "transformObjectKeys": {
-      "string": "Transform object keys"
-    },
-    "unicodeEscapeSequence": {
-      "string": "Use Unicode escape sequences"
-    },
-    "disableConsoleOutput": {
-      "string": "Disable console output"
-    },
-    "selfDefending": {
-      "string": "Self-defending output"
-    },
-    "selfDefendingWarning": {
-      "string": "Self-defending output must not be reformatted or minified again. It increases output size and can make compatibility failures harder to diagnose."
-    },
-    "debugProtection": {
-      "string": "Developer Tools debug protection"
-    },
-    "debugProtectionInterval": {
-      "string": "Repeat interval in milliseconds (0 means once)"
-    },
-    "debugProtectionGlobal": {
-      "string": "The anti-debugging guard is generated once as a global player script instead of being duplicated in every compiled procedure."
-    },
-    "debugProtectionWarning": {
-      "string": "Debug protection can freeze or severely disrupt browser Developer Tools, especially with a repeating interval. Use 2000–4000 ms only when necessary and test the packaged project carefully."
-    },
-    "javascriptObfuscatorPerformance": {
-      "string": "Control-flow flattening, dead-code injection, RC4 strings, and self-defending output can substantially increase build time, file size, startup time, and runtime overhead."
-    },
-    "obfuscationSeed": {
-      "string": "Obfuscation seed"
-    },
-    "derivedFromProject": {
-      "string": "Derived from project when empty"
-    },
-    "aotCompileWarning": {
-      "string": "Compilation and obfuscation only raise the cost of casual reading, copying, and automated analysis. They do not encrypt or completely hide the code: the player must receive executable JavaScript and a determined user can inspect, instrument, or modify it. Do not embed secrets, private keys, or security decisions in the project."
     },
     "warpTimer": {
       "string": "Warp Timer"
@@ -527,9 +440,7 @@
     "customExtensions": {
       "string": "Custom extensions (one URL per line)"
     },
-    "customExtensionsSecurity": {
-      "string": "Custom extensions are always run unsandboxed in the packager. Depending on the environment you're packaging for, this grants extensions full control over your computer, including the ability to install viruses. Don't use extensions you don't trust."
-    },
+    "customExtensionsSecurity": "Extension code and dependencies are frozen at build time and run in an isolated Worker. Extensions requiring full VM access are unsupported.",
     "bakeExtensions": {
       "string": "Try to embed cached copy of custom extensions instead of downloading them each time the project is run",
       "developer_comment": "Option that tries to store "
@@ -726,6 +637,18 @@
     "downloadsWillAppearHere": {
       "string": "Downloads will appear here",
       "developer_comment": "Placeholder that appears when no project has been packaged yet so there is nothing to download"
+    },
+    "specializedProtection": {
+      "string": "Program-specific player"
+    },
+    "specializedProtectionDescription": {
+      "string": "Project scripts and the runtime are compiled together into one offline player."
+    },
+    "buildSeed": {
+      "string": "Build seed"
+    },
+    "randomBuildSeed": {
+      "string": "Random for each build when empty"
     }
   },
   "downloads": {

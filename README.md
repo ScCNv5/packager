@@ -1,6 +1,6 @@
 # SB3C Packager
 
-An independent modified version of [TurboWarp Packager](https://github.com/TurboWarp/packager), focused on ahead-of-time compiled `.sb3c` projects, VM-access protection, reproducible JavaScript obfuscation, and package integrity verification.
+An independent modified version of [TurboWarp Packager](https://github.com/TurboWarp/packager), focused on offline, program-specific players that jointly compile Scratch scripts and the runtime. See [the build architecture](docs/specialized-builds.md).
 
 Source: https://github.com/LuYifei2011/tw-packager
 
@@ -12,9 +12,10 @@ Compilation and obfuscation are not encryption or DRM. They can make casual insp
 
 ## Development
 
-Install dependencies:
+Keep the matching modified `scratch-vm` checkout beside this repository. Install dependencies in both checkouts (Node 22.15 or newer):
 
 ```
+npm ci --prefix ../scratch-vm
 npm ci
 ```
 
@@ -50,12 +51,7 @@ We strive to make the packager easy to fork, even for mods that aren't based on 
 
 ### Packages
 
-If you want to change the scratch-vm/scratch-render/scratch-audio/scratch-storage/etc. used, this is simple:
-
- - `npm install` or `npm link` your package. The package name does not matter.
- - Update src/scaffolding/scratch-libraries.js to import the packages with the name you have. (some of our packages are prefixed with `@turbowarp/` while others are still just `scratch-vm` -- just make sure they match yours)
-
-Then just rebuild. You can even install a vanilla scratch-vm and all core functionality will still work (but optional features such as interpolation, high quality pen, stage size, etc. may not work)
+The compiler frontend, source preparation and player must use the same sibling `scratch-vm` checkout. A generic upstream VM does not provide the specialized IR API. Dependency changes require regenerating the source pack, reviewing initialization/property boundaries and running the differential, artifact and browser checks described in [the build documentation](docs/specialized-builds.md). The lockfile and audited dependency source hashes form part of the build baseline.
 
 Note that npm is a very buggy piece of software and our dependency tree is very large. Occasionally you might get errors about missing dependencies, which should go away if you run `npm install`.
 
@@ -63,14 +59,14 @@ Note that npm is a very buggy piece of software and our dependency tree is very 
 
 The packager is deployed as a simple static website. You can host it anywhere by just copying the `dist` folder after a build.
 
-This fork includes `.github/workflows/deploy.yml` for GitHub Pages. In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. A push to `master`, or a manual run of “Deploy to GitHub Pages”, will test the project, build the production website and standalone version, upload the Pages artifact, and deploy it to `https://luyifei2011.github.io/tw-packager/`.
+This fork includes `.github/workflows/deploy.yml` for GitHub Pages. In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. A push to `main`, or a manual run of “Deploy to GitHub Pages”, will test the project, build the production website and standalone version, upload the Pages artifact, and deploy it to `https://luyifei2011.github.io/tw-packager/`.
 
 We use GitHub Actions and GitHub Pages to manage our deployment. If you want to do this too:
 
  - Fork the repository on GitHub and push your changes.
  - Go to your fork's settings on GitHub and enable GitHub Pages with the source set to GitHub Actions.
  - Go to the "Actions" tab and enable GitHub Actions if it isn't already enabled.
- - Push commits to the "master" branch.
+ - Push commits to the "main" branch.
  - In a few minutes, your site will automatically be built and deployed to GitHub Pages.
 
 ### Branding
@@ -87,7 +83,7 @@ Set the environment variable `ENABLE_SERVICE_WORKER` to `1` to enable service wo
 
 ## Standalone builds
 
-The packager supports generating "standalone builds" that are single HTML files containing the entire packager. Large files such as Electron binaries will still be downloaded from a remote server as needed. You can download prebuilt standalone builds from [our GitHub releases](https://github.com/TurboWarp/packager/releases). These can be useful if our website is blocked or you don't have a reliable internet connection. Note that standalone builds do not contain an update checker, so do check on your own occasionally.
+The packager supports generating "standalone builds" that are single HTML files containing the entire packager, including its compiler, resolved runtime sources and linker. HTML builds work offline; desktop wrapper binaries and extensions not supplied locally are fetched during construction. Standalone builds do not contain an update checker.
 
 To make a production standalone build locally:
 
