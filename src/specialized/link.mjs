@@ -198,6 +198,7 @@ export function stepBody(blocks, transfer = false) {
     if (thread.updateMonitor) { execute(this, thread); return; }
     const target = thread.target, runtime = this.runtime;
     const variables = thread.__spVariables || (thread.__spVariables = []);
+    ${blocks.some(block => block.code.some(code => /\bt\s*=/.test(code))) ? 'let t;' : ''}
     ${blocks.some(block => block.code.some(code => /\bstage\b/.test(code))) ? 'const stage = runtime.getTargetForStage();' : ''}
     const isStuck = () => {
       thread.__spStuck = (thread.__spStuck || 0) + 1;

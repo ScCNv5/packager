@@ -59,14 +59,14 @@ Note that npm is a very buggy piece of software and our dependency tree is very 
 
 The packager is deployed as a simple static website. You can host it anywhere by just copying the `dist` folder after a build.
 
-This fork includes `.github/workflows/deploy.yml` for GitHub Pages. In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. A push to `main`, or a manual run of “Deploy to GitHub Pages”, will test the project, build the production website and standalone version, upload the Pages artifact, and deploy it to `https://sccnv5.github.io/packager/`.
+This fork includes `.github/workflows/deploy.yml` for GitHub Pages. In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. A push to `master`, or a manual run of “Deploy to GitHub Pages”, will test the project, build the production website and standalone version, upload the Pages artifact, and deploy it to `https://sccnv5.github.io/packager/`.
 
 We use GitHub Actions and GitHub Pages to manage our deployment. If you want to do this too:
 
  - Fork the repository on GitHub and push your changes.
  - Go to your fork's settings on GitHub and enable GitHub Pages with the source set to GitHub Actions.
  - Go to the "Actions" tab and enable GitHub Actions if it isn't already enabled.
- - Push commits to the "main" branch.
+ - Push commits to the "master" branch.
  - In a few minutes, your site will automatically be built and deployed to GitHub Pages.
 
 ### Branding

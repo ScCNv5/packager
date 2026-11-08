@@ -193,7 +193,7 @@
     try {
       result = await task.do(runPackager(task, optionsClone));
       task.done();
-      previewer.setContent(result.blob);
+      previewer.setContent(result.blob, optionsClone.app.windowTitle);
     } catch (e) {
       previewer.close();
     }

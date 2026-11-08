@@ -114,15 +114,15 @@ function prepareVM(code, id) {
         input instanceof ArrayBuffer || ArrayBuffer.isView(input) ? JSON.parse(new TextDecoder().decode(input)) : input;
       this.clear();
       for (const id of project.extensions || []) await this.extensionManager.loadExtensionURL((project.extensionURLs || {})[id] || id);
-      const {targets} = await require('./serialization/sb3').deserialize(project, this.runtime);
+      const {targets, layerOrder} = await require('./serialization/sb3').deserialize(project, this.runtime);
+      const layerOrders = new Map(targets.map((target, index) => [target, layerOrder[index]]));
       for (let index = 0; index < targets.length; index++) {
         const target = targets[index];
         target.sprite.__spTarget = index;
         this.runtime.addTarget(target);
         target.updateAllDrawableProperties();
       }
-      this.runtime.executableTargets.sort((a,b) => a.layerOrder-b.layerOrder);
-      targets.forEach(target => { delete target.layerOrder; });
+      this.runtime.executableTargets.sort((a,b) => layerOrders.get(a)-layerOrders.get(b));
       this.editingTarget = targets[1] || targets[0];
       this.runtime.setEditingTarget(this.editingTarget);
       this.runtime.ioDevices.cloud.setStage(this.runtime.getTargetForStage());

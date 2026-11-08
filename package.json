@@ -1,6 +1,6 @@
 {
   "name": "@sccn/tw-packager",
-  "version": "3.13.0",
+  "version": "3.14.0",
   "description": "Compiles, protects, and packages Scratch projects as HTML, archives, or desktop applications.",
   "main": "dist/packager.js",
   "scripts": {
