@@ -25,18 +25,18 @@
     "test:specialized-performance": "node test/specialized-performance.mjs",
     "test:specialized-scratch-benchmark": "node test/specialized-scratch-benchmark.mjs"
   },
-  "author": "LuYifei2011",
-  "homepage": "https://luyifei2011.github.io/tw-packager/",
+  "author": "Lu Yifei <118034848+LuYifei2011@users.noreply.github.com>",
+  "homepage": "https://sccnv5.github.io/packager/",
   "keywords": [
     "scratch",
     "packager"
   ],
   "bugs": {
-    "url": "https://github.com/LuYifei2011/tw-packager/issues"
+    "url": "https://github.com/ScCNv5/packager/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LuYifei2011/tw-packager.git"
+    "url": "git+https://github.com/ScCNv5/packager.git"
   },
   "license": "MPL-2.0",
   "dependencies": {

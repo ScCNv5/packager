@@ -31,7 +31,7 @@ If this is set to an empty string, the link is removed.
 
 module.exports = {
   APP_NAME: 'SB3C Packager',
-  WEBSITE: 'https://luyifei2011.github.io/tw-packager/',
+  WEBSITE: 'https://sccnv5.github.io/packager/',
   COPYRIGHT_NOTICE: `SB3C Packager modifications Copyright (C) 2026 SB3C Packager contributors
 
 Based on TurboWarp Packager, Copyright (C) 2021-2024 Thomas Weber
@@ -40,10 +40,10 @@ The Source Code Form of this program is available under the terms of the
 Mozilla Public License, v. 2.0. You can obtain a copy of the license at
 https://www.mozilla.org/en-US/MPL/2.0/.`,
   ACCENT_COLOR: '#ff4c4c',
-  SOURCE_CODE: 'https://github.com/LuYifei2011/tw-packager',
+  SOURCE_CODE: 'https://github.com/ScCNv5/packager',
   FEEDBACK_PRIMARY: {
     name: 'GitHub',
-    link: 'https://github.com/LuYifei2011/tw-packager/issues'
+    link: 'https://github.com/ScCNv5/packager/issues'
   },
   FEEDBACK_SECONDARY: {
     name: 'TurboWarp Packager',

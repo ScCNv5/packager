@@ -2,9 +2,9 @@
 
 An independent modified version of [TurboWarp Packager](https://github.com/TurboWarp/packager), focused on offline, program-specific players that jointly compile Scratch scripts and the runtime. See [the build architecture](docs/specialized-builds.md).
 
-Source: https://github.com/LuYifei2011/tw-packager
+Source: https://github.com/ScCNv5/packager
 
-Website: https://luyifei2011.github.io/tw-packager/
+Website: https://sccnv5.github.io/packager/
 
 Converts Scratch projects into HTML files, zip archives, or executable programs for Windows, macOS, and Linux.
 
@@ -12,7 +12,7 @@ Compilation and obfuscation are not encryption or DRM. They can make casual insp
 
 ## Development
 
-Keep the matching modified `scratch-vm` checkout beside this repository. Install dependencies in both checkouts (Node 22.15 or newer):
+Keep the matching modified [`ScCNv5/scratch-vm`](https://github.com/ScCNv5/scratch-vm) checkout beside this repository. Install dependencies in both checkouts (Node 22.15 or newer):
 
 ```
 npm ci --prefix ../scratch-vm
@@ -59,7 +59,7 @@ Note that npm is a very buggy piece of software and our dependency tree is very 
 
 The packager is deployed as a simple static website. You can host it anywhere by just copying the `dist` folder after a build.
 
-This fork includes `.github/workflows/deploy.yml` for GitHub Pages. In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. A push to `main`, or a manual run of “Deploy to GitHub Pages”, will test the project, build the production website and standalone version, upload the Pages artifact, and deploy it to `https://luyifei2011.github.io/tw-packager/`.
+This fork includes `.github/workflows/deploy.yml` for GitHub Pages. In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. A push to `main`, or a manual run of “Deploy to GitHub Pages”, will test the project, build the production website and standalone version, upload the Pages artifact, and deploy it to `https://sccnv5.github.io/packager/`.
 
 We use GitHub Actions and GitHub Pages to manage our deployment. If you want to do this too:
 

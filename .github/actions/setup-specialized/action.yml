@@ -18,7 +18,7 @@ runs:
         fi
     - uses: actions/checkout@v6
       with:
-        repository: ScratchCN/Scratch-vm
+        repository: ScCNv5/scratch-vm
         ref: ${{ inputs.vm-ref }}
         path: scratch-vm
         persist-credentials: false
