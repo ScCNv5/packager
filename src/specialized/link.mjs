@@ -4,6 +4,7 @@ import generateModule from '@babel/generator';
 import * as t from '@babel/types';
 import {minify} from 'terser';
 import {extensionLoaderBody} from './extension-runtime.mjs';
+import {collectVMProperties, rewriteThreadStatus, threadStatusProperty, publicProperties} from './aggressive-properties.mjs';
 
 const traverse = traverseModule.default || traverseModule;
 const generate = generateModule.default || generateModule;
@@ -312,8 +313,9 @@ const schedulingProperties = {
 const schedulingArity = {stepThread: 1, retireThread: 1, getIdFromTargetAndBlock: 2,
   pushStack: 1, reuseStackForNextBlock: 1, pushReportedValue: 1, isRecursiveCall: 1};
 
-export function renameProperties(tree, seed, diagnostics, generatedProperties = []) {
-  const declaredProperties = [...internalProperties, ...Object.values(schedulingProperties).flat(), ...generatedProperties];
+export function renameProperties(tree, seed, diagnostics, generatedProperties = [], aggressiveProperties = [], reservedProperties = []) {
+  const declaredProperties = [...new Set([...internalProperties, ...Object.values(schedulingProperties).flat(),
+    ...generatedProperties, ...aggressiveProperties])];
   const schedulingOwner = new Map(Object.entries(schedulingProperties).flatMap(([owner, names]) => names.map(name => [name, owner])));
   const candidates = new Set(declaredProperties);
   const occupied = new Set();
@@ -354,6 +356,7 @@ export function renameProperties(tree, seed, diagnostics, generatedProperties = 
     if (!reasons.has(name)) reasons.set(name, new Set());
     reasons.get(name).add(reason);
   };
+  for (const name of reservedProperties) reserve(name, 'native API, serialized project or public player/extension property');
   const isReflector = (node, p, seen = new Set()) => {
     if (!t.isIdentifier(node)) return false;
     const binding = p.scope.getBinding(node.name);
@@ -488,6 +491,8 @@ export function renameProperties(tree, seed, diagnostics, generatedProperties = 
   diagnostics.reservedPropertyReasons = Object.fromEntries([...reasons].map(([name, entries]) => [name, [...entries].sort()]));
   diagnostics.schedulingProperties = Object.fromEntries(Object.entries(schedulingProperties).map(([owner, names]) =>
     [owner, names.map(name => ({name, renamed: map[name] || null, reasons: diagnostics.reservedPropertyReasons[name] || []}))]));
+  diagnostics.aggressiveProperties = aggressiveProperties.map(name =>
+    ({name, renamed: map[name] || null, reasons: diagnostics.reservedPropertyReasons[name] || []}));
   diagnostics.propertyBoundary = 'Declared continuation, lifecycle, target-identity and audited Thread/Sequencer methods share one mapping. Ambiguous legacy VM, host API and RPC shapes retain stable keys.';
 }
 
@@ -522,7 +527,9 @@ export function auditArtifact(code, {allowGenerators = false} = {}) {
   if (violations.length) throw new Error(`Specialized artifact contains forbidden execution paths: ${[...new Set(violations)].join(', ')}`);
 }
 
-export async function linkPlayer({sourcePack, program, input, boot, seed, minifyOutput = true, sourceMap: wantSourceMap = false, addons = {}}, rollup) {
+export async function linkPlayer({sourcePack, program, input, boot, seed, minifyOutput = true, sourceMap: wantSourceMap = false,
+  aggressiveRenaming = false, addons = {}}, rollup) {
+  if (typeof aggressiveRenaming !== 'boolean') throw new Error('aggressiveRenaming must be a boolean');
   if (!sourcePack || sourcePack.version !== 1) throw new Error('Runtime source pack is missing or incompatible');
   const sources = {...sourcePack.sources};
   // Seed-permuted regions get dense local PCs and an encoded group number.
@@ -546,7 +553,8 @@ export async function linkPlayer({sourcePack, program, input, boot, seed, minify
       code: tree.program.body[0].body.body[0].body.body.body.map(node => print(t.file(t.program([node]))))};
   })};
   const diagnostics = {retainedMembers: [], removedMembers: [], retainedModules: [], removedModules: [],
-    continuationCount: program.blocks.length, scriptCount: program.hats.length, runtimeFingerprint: sourcePack.fingerprint};
+    continuationCount: program.blocks.length, scriptCount: program.hats.length, runtimeFingerprint: sourcePack.fingerprint,
+    aggressiveRenaming};
   if (input.project.targets.some(target => Object.keys(target.blocks).length || Object.keys(target.comments).length)) {
     throw new Error('Player initial data must not contain source blocks or comments');
   }
@@ -651,6 +659,7 @@ export async function linkPlayer({sourcePack, program, input, boot, seed, minify
   requiredPrimitives.add('data_variable'); requiredPrimitives.add('data_listcontents');
   const primitiveBindings = new Map();
   const blockClasses = new Map();
+  const aggressiveProperties = new Set();
   for (const id of Object.keys(sources)) {
     const origins = sourcePack.provenance[id] || [];
     const origin = origins.find(name => /scratch-vm\/src\/(blocks\/scratch3_|extensions\/)/.test(name));
@@ -733,6 +742,18 @@ export async function linkPlayer({sourcePack, program, input, boot, seed, minify
     }
     if (requiredPrimitives.size) selected.add('getMonitored');
     pruneClass(item.tree, selected, diagnostics, item.id);
+    if (aggressiveRenaming) {
+      // Core packages are registered with static assignments below, so their
+      // runtime fields and private methods can share the program's property map.
+      // Keep public registration hooks and opcode/RPC metadata stable. Literal
+      // access and reflection still reserve names in renameProperties.
+      aggressiveProperties.add(field);
+      const cls = item.tree.program.body.find(node => t.isClassDeclaration(node));
+      for (const member of cls.body.body) {
+        const name = keyName(member);
+        if (t.isClassMethod(member) && !member.computed && /^_(?!_)/.test(name)) aggressiveProperties.add(name);
+      }
+    }
     removeUnusedImports(item.tree);
     sources[item.id] = print(item.tree);
   }
@@ -819,6 +840,23 @@ export async function linkPlayer({sourcePack, program, input, boot, seed, minify
   }
   const entry = 'specialized-boot.js';
   sources[entry] = `import {Scaffolding, ScaffoldingAddons} from ${q(sourcePack.entry)};\n${boot}`;
+  if (aggressiveRenaming) {
+    if (!sourcePack.platformProperties?.length) throw new Error('Rebuild the runtime source pack for expanded aggressive renaming');
+    const families = /scratch-vm\/src\/(engine\/(runtime|thread|sequencer|target|variable)|sprites\/(rendered-target|sprite)|blocks\/scratch3_\w+)\.js$/;
+    diagnostics.threadStatusAccesses = 0;
+    for (const id of Object.keys(sources)) {
+      const origins = sourcePack.provenance[id] || [];
+      const origin = origins.find(name => families.test(name));
+      const statusSource = origins.find(name => /scratch-vm\/src\/engine\/(thread|sequencer|runtime|execute|block-utility)\.js$/.test(name) ||
+        name.endsWith('scratch-vm/src/blocks/scratch3_procedures.js') || name.endsWith('tw-packager/src/addons/pause.js'));
+      if (!origin && !statusSource) continue;
+      const tree = parseCode(sources[id]);
+      if (origin) for (const name of collectVMProperties(tree)) aggressiveProperties.add(name);
+      if (statusSource) diagnostics.threadStatusAccesses += rewriteThreadStatus(tree, statusSource);
+      sources[id] = print(tree);
+    }
+    aggressiveProperties.add(threadStatusProperty);
+  }
   const importedBy = new Map();
   const bundle = await rollup({input: entry, treeshake: {moduleSideEffects: true},
     onwarn(warning) { if (!['CIRCULAR_DEPENDENCY', 'THIS_IS_UNDEFINED'].includes(warning.code)) throw new Error(warning.message); },
@@ -853,7 +891,12 @@ export async function linkPlayer({sourcePack, program, input, boot, seed, minify
       }
     }
     const tree = parseCode(chunk.code);
-    renameProperties(tree, seed, diagnostics, Object.keys(methods).filter(name => name !== 'stepThread'));
+    renameProperties(tree, seed, diagnostics, Object.keys(methods).filter(name => name !== 'stepThread'),
+      [...aggressiveProperties].sort(), aggressiveRenaming ? [...sourcePack.platformProperties, ...publicProperties] : []);
+    if (aggressiveRenaming) {
+      diagnostics.scopedProperties = {'Thread.status': diagnostics.propertyMap[threadStatusProperty]};
+      diagnostics.propertyBoundary = 'Expanded aggressive mode renames VM, target, sprite and core block methods and internal fields, including scoped thread status. Native APIs, SB3 state keys and public player/extension protocols retain stable names. Third-party extension compatibility is not guaranteed.';
+    }
     const transformed = generate(tree, {comments: false, sourceMaps: wantSourceMap,
       inputSourceMap: wantSourceMap ? chunk.map : undefined, sourceFileName: 'linked-player.js'}, chunk.code);
     let code = transformed.code;

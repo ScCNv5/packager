@@ -9,6 +9,7 @@ import * as t from '@babel/types';
 import generateModule from '@babel/generator';
 import {renameProperties, linkPlayer} from '../src/specialized/link.mjs';
 import {fixtureProject} from './specialized-fixtures.mjs';
+import {rewriteThreadStatus, threadStatusProperty} from '../src/specialized/aggressive-properties.mjs';
 
 const generate = generateModule.default || generateModule;
 const definitions = `
@@ -27,12 +28,120 @@ const definitions = `
   const runtime = {sequencer: new B()};
   const task = new A();
 `;
-const transform = (source, seed = 'properties') => {
+const transform = (source, seed = 'properties', aggressiveProperties = []) => {
   const tree = parse(source), diagnostics = {};
-  renameProperties(tree, seed, diagnostics);
+  renameProperties(tree, seed, diagnostics, [], aggressiveProperties);
   return {code: generate(tree).code, diagnostics};
 };
 const execute = code => new vm.Script(code).runInNewContext();
+
+test('scoped thread status is renamed without changing HTTP response status', () => {
+  const tree = parse(`class Thread { constructor() { this.status = 0; } }
+    const thread = new Thread(); thread['status'] = 4; thread.status;`);
+  assert.equal(rewriteThreadStatus(tree, 'scratch-vm/src/engine/thread.js'), 3);
+  const diagnostics = {};
+  renameProperties(tree, 'status', diagnostics, [], [threadStatusProperty]);
+  const code = generate(tree).code;
+  assert.equal(execute(code), 4);
+  assert(!code.includes('.status') && !code.includes(threadStatusProperty));
+  const external = parse('const response = {status: 200}; response.status;');
+  assert.equal(rewriteThreadStatus(external, 'scratch-vm/src/extension-support/tw-external.js'), 0);
+  assert.equal(execute(generate(external).code), 200);
+  assert.throws(() => rewriteThreadStatus(parse('response.status;'), 'scratch-vm/src/engine/runtime.js'), /Unreviewed thread status receiver/);
+});
+
+test('aggressive candidates share a seeded map and retain literal reflection boundaries', () => {
+  const source = `class Motion { _moveSteps(n, target) { target.x += n; } }
+    const runtime = {ext_scratch3_motion: new Motion()}, target = {x: 0};
+    runtime.ext_scratch3_motion._moveSteps(10, target); target.x;`;
+  const names = ['ext_scratch3_motion', '_moveSteps'];
+  assert(names.every(name => !transform(source).diagnostics.propertyMap[name]));
+  const result = transform(source, 'aggressive', names);
+  assert.equal(execute(result.code), 10);
+  assert(names.every(name => result.diagnostics.propertyMap[name] && !result.code.includes(name)));
+  assert.equal(result.code, transform(source, 'aggressive', names).code);
+  assert.notEqual(result.code, transform(source, 'other', names).code);
+  const reflected = transform(source + `runtime.ext_scratch3_motion['_moveSteps'](5, target); target.x;`, 'aggressive', names);
+  assert.equal(execute(reflected.code), 15);
+  assert(!reflected.diagnostics.propertyMap._moveSteps);
+  assert(reflected.diagnostics.propertyMap.ext_scratch3_motion);
+});
+
+test('aggressive core package renaming preserves motion, clones and restart', async () => {
+  const require = createRequire(new URL('../../scratch-vm/package.json', import.meta.url));
+  const VM = require('./src/virtual-machine'), {lower} = require('./src/compiler/continuation');
+  const original = new VM();
+  const project = fixtureProject();
+  const stage = project.targets[0];
+  stage.blocks = {}; stage.costumes = []; project.monitors = [];
+  const sprite = {...structuredClone(stage), isStage: false, name: 'Sprite', variables: {},
+    visible: true, x: 0, y: 0, direction: 90, size: 100, rotationStyle: 'all around', layerOrder: 1};
+  const block = (opcode, parent, next, inputs = {}, fields = {}) =>
+    ({opcode, parent, next, inputs, fields, shadow: false, topLevel: !parent});
+  sprite.blocks = {
+    flag: block('event_whenflagclicked', null, 'reset'),
+    reset: block('motion_gotoxy', 'flag', 'move', {X: [1, [4, '0']], Y: [1, [4, '0']]}),
+    move: block('motion_movesteps', 'reset', 'clone', {STEPS: [1, [4, '10']]}),
+    clone: block('control_create_clone_of', 'move', null, {CLONE_OPTION: [1, [10, '_myself_']]}),
+    cloneHat: block('control_start_as_clone', null, 'cloneMove'),
+    cloneMove: block('motion_movesteps', 'cloneHat', 'record', {STEPS: [1, [4, '5']]}),
+    record: block('data_setvariableto', 'cloneMove', null,
+      {VALUE: [3, 'x', [4, '0']]}, {VARIABLE: ['answer', 'answer']}),
+    x: block('motion_xposition', 'record', null)
+  };
+  project.targets.push(sprite);
+  const sourcePack = JSON.parse(await fs.readFile(new URL('../generated/runtime-sources.json', import.meta.url)));
+  const descriptors = {};
+  const element = () => ({style: {}, appendChild() {}, insertBefore() {}, setAttribute() {}, getContext() { return null; }});
+  let playerVM;
+  let properties = {};
+  const call = (object, name, ...args) => object[properties[name] || name](...args);
+  try {
+    await original.loadProject(JSON.stringify(project));
+    const input = original.exportSpecializedProjectBuildInput();
+    for (const [name, value] of Object.entries({window: globalThis, self: globalThis,
+      document: {hidden: false, createElement: element, head: element(), body: element()}})) {
+      descriptors[name] = Object.getOwnPropertyDescriptor(globalThis, name);
+      Object.defineProperty(globalThis, name, {value, configurable: true, writable: true});
+    }
+    for (const aggressiveRenaming of [false, true]) {
+      const result = await linkPlayer({sourcePack, input, program: lower(input, 42), seed: 'aggressive-core',
+        aggressiveRenaming, boot: `const vm = new Scaffolding.VM(); globalThis.aggressiveVM = vm;
+          globalThis.aggressiveReady = vm.loadProject(${JSON.stringify(JSON.stringify(input.project))});`}, rollup);
+      for (const name of ['ext_scratch3_motion', '_moveSteps', 'ext_scratch3_control', '_createClone']) {
+        assert.equal(Boolean(result.diagnostics.propertyMap[name]), aggressiveRenaming, name);
+        if (aggressiveRenaming) assert(!result.code.includes(name), `${name} should not survive in player code`);
+      }
+      assert.equal(result.diagnostics.aggressiveRenaming, aggressiveRenaming);
+      for (const name of ['isKilled', 'setXY', 'getTargetForStage', 'startHats']) {
+        assert.equal(Boolean(result.diagnostics.propertyMap[name]), aggressiveRenaming, name);
+        if (aggressiveRenaming) assert(!result.code.includes(`.${name}`), name);
+      }
+      if (aggressiveRenaming) {
+        assert(result.diagnostics.scopedProperties['Thread.status']);
+        assert(result.diagnostics.reservedPropertyReasons.currentCostume.length);
+        assert(!result.diagnostics.propertyMap.variables && !result.diagnostics.propertyMap.value);
+      }
+      new vm.Script(result.code).runInThisContext();
+      await globalThis.aggressiveReady; playerVM = globalThis.aggressiveVM;
+      properties = result.diagnostics.propertyMap;
+      for (let run = 0; run < 2; run++) {
+        call(playerVM, 'greenFlag');
+        for (let tick = 0; tick < 10; tick++) call(playerVM.runtime, '_step');
+        assert.equal(call(playerVM.runtime, 'getTargetForStage').variables.answer.value, 15);
+        assert.deepEqual(playerVM.runtime.targets.filter(target => !target.isStage).map(target => target.x), [10, 15]);
+        call(playerVM, 'stopAll');
+      }
+      call(playerVM, 'quit'); playerVM = null;
+    }
+  } finally {
+    original.quit(); if (playerVM) call(playerVM, 'quit');
+    delete globalThis.aggressiveVM; delete globalThis.aggressiveReady;
+    for (const [name, descriptor] of Object.entries(descriptors)) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name];
+    }
+  }
+});
 
 test('VM declarations, aliases, destructuring and optional calls share one property map', () => {
   const source = definitions + `
@@ -161,11 +270,14 @@ test('reassigned aliases preserve unknown receivers and dynamic scheduling acces
   }
 });
 
-test('the linked pause addon uses the same scheduling names as the VM and program', async () => {
+for (const aggressiveRenaming of [false, true]) test(`the linked pause addon shares VM properties (aggressive=${aggressiveRenaming})`, async () => {
   const require = createRequire(new URL('../../scratch-vm/package.json', import.meta.url));
   const VM = require('./src/virtual-machine'), {lower} = require('./src/compiler/continuation');
   const original = new VM();
   let playerVM;
+  let properties = {};
+  const read = (object, name) => object[properties[name] || name];
+  const call = (object, name, ...args) => read(object, name).apply(object, args);
   const descriptors = {};
   try {
     const project = fixtureProject({iterations: 100000});
@@ -186,7 +298,7 @@ test('the linked pause addon uses the same scheduling names as the VM and progra
       throw new Error('Must reject changed ownership contracts before linking');
     }), /Thread methods changed/);
     const result = await linkPlayer({sourcePack, input, program: lower(input, 42), seed: 'pause-property-audit',
-      addons: {pause: true}, boot: `const vm = new Scaffolding.VM();
+      aggressiveRenaming, addons: {pause: true}, boot: `const vm = new Scaffolding.VM();
         ScaffoldingAddons.run({vm}, {pause: true});
         globalThis.renamedVM = vm;
         globalThis.renamedReady = vm.loadProject(${JSON.stringify(JSON.stringify(input.project))});`}, rollup);
@@ -198,24 +310,25 @@ test('the linked pause addon uses the same scheduling names as the VM and progra
     }
     new vm.Script(result.code).runInThisContext();
     await globalThis.renamedReady; playerVM = globalThis.renamedVM;
+    properties = result.diagnostics.propertyMap;
     const key = result.diagnostics.propertyMap.stepThreads;
-    const sequencer = playerVM.runtime.sequencer;
+    const sequencer = read(playerVM.runtime, 'sequencer');
     assert(key && typeof sequencer[key] === 'function');
     assert.equal(sequencer.stepThreads, undefined);
     assert.notEqual(sequencer[key], Object.getPrototypeOf(sequencer)[key], 'pause hook overrides the renamed method');
-    const value = () => playerVM.runtime.getTargetForStage().variables.answer.value;
-    playerVM.greenFlag(); playerVM.runtime._step();
+    const value = () => call(playerVM.runtime, 'getTargetForStage').variables.answer.value;
+    call(playerVM, 'greenFlag'); call(playerVM.runtime, '_step');
     const before = value();
     assert(before > 0 && before < 100000);
     playerVM.setPaused(true);
-    for (let tick = 0; tick < 4; tick++) playerVM.runtime._step();
+    for (let tick = 0; tick < 4; tick++) call(playerVM.runtime, '_step');
     assert.equal(value(), before);
-    playerVM.setPaused(false); playerVM.runtime._step();
+    playerVM.setPaused(false); call(playerVM.runtime, '_step');
     assert(value() > before);
-    playerVM.stopAll(); playerVM.greenFlag(); playerVM.runtime._step();
+    call(playerVM, 'stopAll'); call(playerVM, 'greenFlag'); call(playerVM.runtime, '_step');
     assert(value() > 0 && value() < 100000);
   } finally {
-    original.quit(); playerVM?.quit();
+    original.quit(); if (playerVM) call(playerVM, 'quit');
     delete globalThis.renamedVM; delete globalThis.renamedReady;
     for (const [name, descriptor] of Object.entries(descriptors)) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name];

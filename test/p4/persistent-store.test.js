@@ -37,7 +37,7 @@ test('language changes survive recreating the store', () => {
 });
 
 const defaultOptions = () => ({
-  compiler: {enabled: true, warpTimer: false, seed: ''},
+  compiler: {enabled: true, warpTimer: false, seed: '', aggressiveRenaming: false},
   custom: {css: ''},
   cloudVariables: {mode: 'ws'},
   framerate: 30
@@ -66,9 +66,9 @@ test('legacy packager settings still report migration and preserve unrelated pre
   expect(get(error)).toBeNull();
 });
 
-test('current packager settings retain seed and warp timing', () => {
+test('current packager settings retain seed, warp timing and aggressive renaming', () => {
   const key = 'PackagerOptions.project';
-  const compiler = {enabled: true, seed: 'test-seed', warpTimer: true};
+  const compiler = {enabled: true, seed: 'test-seed', warpTimer: true, aggressiveRenaming: true};
   localStorage.setItem(key, JSON.stringify({compiler}));
   expect(get(writablePackagerOptionsStore(key, defaultOptions())).compiler).toEqual(compiler);
   expect(get(error)).toBeNull();

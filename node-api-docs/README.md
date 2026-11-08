@@ -119,9 +119,12 @@ Every export jointly links the optimized project and its specialized VM. Node 22
 ```js
 packager.options.compiler.seed = 'reproducible-build';
 packager.options.compiler.warpTimer = false;
+packager.options.compiler.aggressiveRenaming = false;
 ```
 
 The seed is optional; an empty seed selects fresh cryptographic random build material. A seed is not a secret or an encryption key.
+
+Enable `packager.options.compiler.aggressiveRenaming = true` (or pass `aggressiveRenaming: true` to `compileProject`) to also rename VM internal fields and runtime, sprite and core block methods. Coverage includes `isKilled`, thread execution status, `startHats`, `getTargetForStage`, `setXY`, `setSize`, `getCostumes`, and calls such as `runtime.ext_scratch3_motion._moveSteps(10, target)`. The default is `false`. This mode is intended for standard Scratch projects and may break third-party extension compatibility. Native JS/browser APIs, public player/extension APIs, SB3 state keys (`variables`, `currentCostume`) and names referenced as string literals remain stable. HTTP response `status` is preserved separately from thread status. `diagnostics.aggressiveProperties` records renamed and reserved candidates; `diagnostics.scopedProperties['Thread.status']` records the thread status mapping.
 
 To obtain the linked JavaScript and resource archive without a page wrapper:
 

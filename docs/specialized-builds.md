@@ -16,6 +16,12 @@ This is a bounded scheduling audit, not whole-program ownership inference. Ambig
 
 Capabilities are selected from emitted operations, assets, hats, monitors and extensions. Unused sound, video and pen modules are removed. Builtin block classes retain only referenced methods, transitive helpers and initialization. Builtin extensions with static registration metadata are pruned by required opcodes and direct IR calls. Dynamic registration metadata conservatively retains its extension as a unit. `diagnostics` lists retained and removed modules/members, capability reasons, shared dispatch groups, fixed-extension dependencies and surviving third-party CommonJS wrappers.
 
+The optional `aggressiveRenaming` build option (or `packager.options.compiler.aggressiveRenaming`) defaults to `false`. It extends the shared seeded property map to methods and internal fields collected from the prepared Runtime, Thread, Sequencer, Target, RenderedTarget, Sprite, Variable and core block classes. This includes core module entry fields (`ext_scratch3_*`), private helpers, public sprite methods (`setXY`, `setSize`, `setCostume`, `getCostumes`, `isTouchingObject`), runtime methods (`startHats`, `getTargetForStage`) and thread fields such as `isKilled`. Definitions, initialization, compiled calls and monitor code use the same mapping.
+
+Thread `status` is normalized to an internal field before linking in an explicit source-module/receiver manifest, including the pause addon's saved state. Unexpected status receivers fail the build for review. HTTP `Response.status` and other external status fields retain their names. `diagnostics.scopedProperties['Thread.status']` reports the internal field's final name.
+
+The source pack includes the pinned Terser platform-property inventory, covered by its fingerprint. Native JS/browser APIs, the frozen player API, extension registration/RPC shapes and SB3 state keys remain stable. In particular, `variables`, `currentCostume` and `value` remain unchanged. String literals (including literal property access and reflection keys) also reserve names. This mode targets standard Scratch projects and may break third-party extension compatibility. `diagnostics.aggressiveRenaming` records the mode; `diagnostics.aggressiveProperties` lists candidate mappings and reservation reasons. Regenerate old source packs before using this expanded mode.
+
 The wrapper allowlist contains only JSZip's `utils.js`/`base64.js` cycle, whose `require` bindings capture partially initialized mutable export objects. Their source hashes, dependency cycle and initialization reason are recorded in the build report; source changes require a fresh review. Player-only ZIP preparation excludes Node stream adapters and obsolete Promise polyfills. Text utility module closures are converted to ESM. TWGL 4.4.0's pinned 15-module acyclic webpack bundle is unpacked into ESM at build-tool preparation time, removing its factory table and loader. Both transformations check their source shape, and the TWGL transform checks its exact source hash. CommonJS uses the explicit allowlist, rather than automatic conditional-require wrapping. Any surviving unaudited wrapper fails the build.
 
 ## Playback API
@@ -53,6 +59,7 @@ npm test -- --runInBand
 npm run test:specialized
 node --test test/specialized-structure.mjs
 node --test test/specialized-properties.mjs
+npm run test:specialized-aggressive
 node test/specialized-build.mjs
 node test/specialized-worker-input.mjs
 node test/specialized-browser.mjs
@@ -62,6 +69,8 @@ node test/specialized-standalone.mjs
 ```
 
 Playwright's Chromium, Firefox and WebKit binaries must be installed for browser tests. Build/performance artifacts go to the sibling `work/acceptance` directory and are not published. Use Node 22.15 or newer. The lockfile pins the Node and browser Rollup versions; the WASM bootstrap patch deliberately fails if that pinned entry changes.
+
+To exercise aggressive mode through the public Node API, HTML/ZIP packaging, real browser playback and browser Worker parity, run `node test/specialized-build.mjs --aggressive` and `node test/specialized-worker-input.mjs --aggressive` before `node test/specialized-browser.mjs`. These regenerate the local acceptance artifacts for the selected mode.
 
 CI checks out both repositories as siblings. Set the `SPECIALIZED_VM_REF` repository variable to the full commit SHA containing the matching VM changes; workflows reject an absent or floating revision. No commit is invented or automatically pushed by local builds. `node test/specialized-differential.mjs --linked` runs the same fixture comparison against the complete linked/pruned/renamed production VM, in addition to the faster continuation-only harness.
 

@@ -28,9 +28,13 @@ jobs:
         npm test -- --runInBand
         npm run test:specialized
         node test/specialized-differential.mjs --linked
+        npm run test:specialized-aggressive
         npm run test:specialized-build
         node test/specialized-worker-input.mjs
         npx playwright install --with-deps chromium firefox webkit
+        npm run test:specialized-browser
+        node test/specialized-build.mjs --aggressive
+        node test/specialized-worker-input.mjs --aggressive
         npm run test:specialized-browser
         npm run test:specialized-performance
     - name: Build standalone

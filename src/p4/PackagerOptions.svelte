@@ -457,10 +457,15 @@
   </div>
 </Section>
 
-<Section accent="#855CD6" reset={() => resetOptions(['compiler.seed'])}>
+<Section accent="#855CD6" reset={() => resetOptions(['compiler.seed', 'compiler.aggressiveRenaming'])}>
   <div>
     <h2>{$_('options.specializedProtection')}</h2>
     <p>{$_('options.specializedProtectionDescription')}</p>
+    <label class="option">
+      <input type="checkbox" bind:checked={$options.compiler.aggressiveRenaming}>
+      {$_('options.aggressiveRenaming')}
+    </label>
+    <p>{$_('options.aggressiveRenamingDescription')}</p>
     <label class="option">
       {$_('options.buildSeed')}
       <input type="text" bind:value={$options.compiler.seed} placeholder={$_('options.randomBuildSeed')}>

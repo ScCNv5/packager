@@ -647,6 +647,12 @@
     "buildSeed": {
       "string": "Build seed"
     },
+    "aggressiveRenaming": {
+      "string": "Aggressive renaming"
+    },
+    "aggressiveRenamingDescription": {
+      "string": "Also rename internal runtime fields, sprite methods and core block methods. Suitable for standard Scratch projects; may break third-party extensions."
+    },
     "randomBuildSeed": {
       "string": "Random for each build when empty"
     }

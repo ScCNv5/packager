@@ -12,7 +12,8 @@ const vm = new VM();
 try {
   await vm.loadProject(JSON.stringify(fixtureProject()));
   const input = vm.exportSpecializedProjectBuildInput();
-  const data = {input, program: lower(input, 100), seed: 'parity', boot: 'const vm = new Scaffolding.VM(); vm.quit();'};
+  const data = {input, program: lower(input, 100), seed: 'parity', aggressiveRenaming: process.argv.includes('--aggressive'),
+    boot: 'const vm = new Scaffolding.VM(); vm.quit();'};
   const node = await linkPlayer({...data, sourcePack}, rollup);
   const directory = new URL('../../work/acceptance/', import.meta.url);
   await fs.writeFile(new URL('worker-input.json', directory), JSON.stringify({data, expected: createHash('sha256').update(node.code).digest('hex')}));

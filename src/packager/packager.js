@@ -1503,7 +1503,8 @@ cd "$(dirname "$0")"
       if (!/\bsrc=/.test(attributes)) boot.push(source);
       return '';
     });
-    const result = await finishProject(this.specializedBuild, boot.join('\n'), {addons: this.getAddonOptions(), sourceMap: this.options.compiler.sourceMap === true});
+    const result = await finishProject(this.specializedBuild, boot.join('\n'), {addons: this.getAddonOptions(),
+      sourceMap: this.options.compiler.sourceMap === true, aggressiveRenaming: this.options.compiler.aggressiveRenaming === true});
     this.script = COPYRIGHT_HEADER + '\n' + result.code;
     this.buildResult = result;
     const script = this.options.target === 'html' ? `<script>${this.script.replace(/<\/script/gi, '<\\/script')}</script>` : '<script src="script.js"></script>';
@@ -1640,6 +1641,7 @@ Packager.DEFAULT_OPTIONS = () => ({
   compiler: {
     enabled: true,
     warpTimer: false,
+    aggressiveRenaming: false,
     seed: ''
   },
   packagedRuntime: true,

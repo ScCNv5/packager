@@ -6,13 +6,18 @@ import {auditArtifact} from '../src/specialized/link.mjs';
 const require = createRequire(import.meta.url);
 const {compileProject, Packager, loadProject} = require('../dist/packager.js');
 const JSZip = require('@turbowarp/jszip');
+const aggressiveRenaming = process.argv.includes('--aggressive');
 const out = new URL('../../work/acceptance/', import.meta.url);
 await fs.mkdir(out, {recursive: true});
 const bytes = async project => new JSZip().file('project.json', JSON.stringify(project)).file(`${costumeId}.svg`, costumeSVG)
   .generateAsync({type: 'uint8array'});
 const data = await bytes(fixtureProject());
-const first = await compileProject(data, {seed: 'acceptance', autoplay: false});
-const second = await compileProject(data, {seed: 'acceptance', autoplay: false, sourceMap: true});
+const first = await compileProject(data, {seed: 'acceptance', autoplay: false, aggressiveRenaming});
+const second = await compileProject(data, {seed: 'acceptance', autoplay: false, sourceMap: true, aggressiveRenaming});
+assert.equal(first.diagnostics.aggressiveRenaming, aggressiveRenaming);
+for (const name of ['ext_scratch3_looks', '_say']) {
+  assert.equal(Boolean(first.diagnostics.propertyMap[name]), aggressiveRenaming, name);
+}
 assert.equal(first.code, second.code, 'explicit seed reproduces the player');
 assert.deepEqual(first.assets, second.assets, 'explicit seed reproduces resources');
 assert.equal(first.buildId, second.buildId);
@@ -41,13 +46,16 @@ await fs.writeFile(new URL('index.html', out), '<!DOCTYPE html><html><body><scri
 const packager = new Packager();
 packager.project = await loadProject(data);
 packager.options.compiler.seed = 'acceptance';
+packager.options.compiler.aggressiveRenaming = aggressiveRenaming;
 packager.options.autoplay = false;
 packager.options.cloudVariables.mode = 'none';
 const html = await packager.package();
+assert.equal(packager.buildResult.diagnostics.aggressiveRenaming, aggressiveRenaming);
 await fs.writeFile(new URL('embedded.html', out), new Uint8Array(html.data));
 const zipped = new Packager();
 zipped.project = await loadProject(data);
 zipped.options.compiler.seed = 'acceptance';
+zipped.options.compiler.aggressiveRenaming = aggressiveRenaming;
 zipped.options.autoplay = false;
 zipped.options.cloudVariables.mode = 'none';
 zipped.options.target = 'zip';
@@ -60,7 +68,7 @@ for (const [name, file] of Object.entries(webZip.files)) {
 }
 await fs.writeFile(new URL('player-web.zip', out), (await webZip.generateAsync({type: 'uint8array'})));
 const fixed = await compileProject(await bytes(fixtureProject({extension: true, branch: true})),
-  {seed: 'extension', autoplay: false, extensions: [fixedExtension]});
+  {seed: 'extension', autoplay: false, extensions: [fixedExtension], aggressiveRenaming});
 await fs.mkdir(new URL('extension/', out), {recursive: true});
 await fs.writeFile(new URL('extension/player.js', out), fixed.code);
 await fs.writeFile(new URL('extension/project.zip', out), fixed.assets[0].data);
@@ -83,7 +91,7 @@ commands.forEach(([opcode, inputs, fields = {}], index) => {
     parent: index ? `b${index - 1}` : null, next: index + 1 < commands.length ? `b${index + 1}` : null};
 });
 drawing.targets.push(sprite); drawing.extensions = ['pen'];
-const rendered = await compileProject(await bytes(drawing), {seed: 'rendering', autoplay: false});
+const rendered = await compileProject(await bytes(drawing), {seed: 'rendering', autoplay: false, aggressiveRenaming});
 assert(rendered.diagnostics.retainedModules.some(id => id.includes('/PenSkin')));
 await fs.mkdir(new URL('rendering/', out), {recursive: true});
 await fs.writeFile(new URL('rendering/player.js', out), rendered.code);

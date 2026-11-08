@@ -6,6 +6,9 @@ export const migrationError = () => new Error('旧编译包和保护选项已移
 export function validateBuildOptions(options = {}) {
   if (['aot', 'signManifest', 'deriveSeed', 'stages', 'signatureVerifierSource', 'wasm', 'protection'].some(key => key in options)) throw migrationError();
   if (options.enabled === false) throw new Error('专用播放器必须启用编译。');
+  if (options.aggressiveRenaming !== undefined && typeof options.aggressiveRenaming !== 'boolean') {
+    throw new Error('aggressiveRenaming must be a boolean');
+  }
 }
 export function validatePackagerOptions(options = {}) {
   validateBuildOptions(options);
@@ -104,14 +107,16 @@ export async function prepareProject(projectData, options = {}) {
     archive.file('project.json', JSON.stringify(input.project), {date});
     for (const asset of [...assets].sort((a, b) => a.name.localeCompare(b.name))) archive.file(asset.name, asset.data, {date});
     const resourceData = await archive.generateAsync({type: 'uint8array', compression: 'DEFLATE', compressionOptions: {level: 6}});
-    return {input, program, seed, assets, resourceData};
+    return {input, program, seed, assets, resourceData, aggressiveRenaming: options.aggressiveRenaming === true};
   } finally { vm.quit(); }
 }
 
 export async function finishProject(prepared, boot, options = {}) {
+  validateBuildOptions(options);
   if (!Adapter || !Adapter.linkSpecialized) throw new Error('Specialized build adapter is unavailable');
   const linked = await Adapter.linkSpecialized({input: prepared.input, program: prepared.program,
-    seed: prepared.seed, boot, addons: options.addons || {}, minifyOutput: options.minify !== false, sourceMap: options.sourceMap === true});
+    seed: prepared.seed, boot, addons: options.addons || {}, minifyOutput: options.minify !== false, sourceMap: options.sourceMap === true,
+    aggressiveRenaming: options.aggressiveRenaming === undefined ? prepared.aggressiveRenaming === true : options.aggressiveRenaming});
   const codeHash = await sha256(new TextEncoder().encode(linked.code));
   const resourceHash = await sha256(prepared.resourceData);
   const buildId = await sha256(new TextEncoder().encode(JSON.stringify({codeHash, resourceHash})));

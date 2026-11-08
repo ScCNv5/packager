@@ -413,8 +413,16 @@ helperAST.program.body = helperAST.program.body.filter(n => !t.isVariableDeclara
   !n.declarations.some(d => ['stuckCounter', 'isStuck', 'colorToList'].includes(d.id.name)));
 helperAST.program.body = helperAST.program.body.map(n => t.isVariableDeclaration(n) ? t.exportNamedDeclaration(n) : n);
 const helpers = generate(helperAST, {comments: false}).code;
-const fingerprint = createHash('sha256').update(JSON.stringify({sources, helpers})).digest('hex');
+// Use the pinned minifier's platform property inventory in both Node and the
+// browser linker. Native browser/JS properties must never be global candidates.
+const platformTree = ast(await fs.readFile(path.join(path.dirname(require.resolve('terser/package.json')), 'tools/domprops.js'), 'utf8'));
+const platformArray = platformTree.program.body[0]?.declaration?.declarations[0]?.init;
+if (!t.isArrayExpression(platformArray) || !platformArray.elements.every(t.isStringLiteral)) {
+  throw new Error('Terser platform property inventory changed; review aggressive renaming');
+}
+const platformProperties = platformArray.elements.map(node => node.value);
+const fingerprint = createHash('sha256').update(JSON.stringify({sources, helpers, platformProperties})).digest('hex');
 await fs.mkdir(path.dirname(output), {recursive: true});
-await fs.writeFile(output, JSON.stringify({version: 1, fingerprint, entry, extensionApi, sources, provenance, helpers, wrapperAudit}));
+await fs.writeFile(output, JSON.stringify({version: 1, fingerprint, entry, extensionApi, sources, provenance, helpers, wrapperAudit, platformProperties}));
 await bundle.close();
 console.log(`Prepared ${Object.keys(sources).length} runtime modules (${fingerprint.slice(0, 12)})`);
