@@ -66,6 +66,8 @@ for (const name of names) {
   const run = async specialized => {
     let vm = new VM(); vm.attachStorage(new Storage()); vm.setCompilerOptions({enabled: true});
     let properties = {};
+    let scoped = {};
+    const state = (object, name) => object[scoped[`Target.${name}`] || name];
     const read = (object, name) => object[properties[name] || name];
     const call = (object, name, ...args) => read(object, name).apply(object, args);
     const originalRandom = Math.random;
@@ -89,6 +91,7 @@ for (const name of names) {
         new vmModule.Script(built.code).runInThisContext();
         vm = globalThis.linkedDifferentialVM;
         properties = built.diagnostics.propertyMap;
+        scoped = built.diagnostics.scopedProperties || {};
         await globalThis.linkedDifferentialReady;
       }
       vm.runtime.on('SAY', (target, kind, value) => events.push([target.getName(), kind, String(value)]));
@@ -110,7 +113,7 @@ for (const name of names) {
         await new Promise(resolve => setTimeout(resolve, 1));
       }
       return {events, values: vm.runtime.targets.map(target => [target.getName(),
-        Object.values(target.variables).map(variable => [variable.name, variable.type, variable.value])])};
+        Object.values(state(target, 'variables')).map(variable => [variable.name, variable.type, variable.value])])};
     } finally {
       call(vm, 'quit'); Math.random = originalRandom; global.Date = RealDate;
       delete globalThis.linkedDifferentialVM; delete globalThis.linkedDifferentialReady;

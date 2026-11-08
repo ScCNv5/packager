@@ -10,6 +10,7 @@ import generateModule from '@babel/generator';
 import {renameProperties, linkPlayer} from '../src/specialized/link.mjs';
 import {fixtureProject} from './specialized-fixtures.mjs';
 import {rewriteThreadStatus, threadStatusProperty} from '../src/specialized/aggressive-properties.mjs';
+import {targetFields, targetProperty, targetStateModule, targetStateSource, rewriteTargetState, finalizeTargetState} from '../src/specialized/target-state.mjs';
 
 const generate = generateModule.default || generateModule;
 const definitions = `
@@ -34,6 +35,40 @@ const transform = (source, seed = 'properties', aggressiveProperties = []) => {
   return {code: generate(tree).code, diagnostics};
 };
 const execute = code => new vm.Script(code).runInNewContext();
+
+test('private target state preserves JSON, native size, receiver evaluation, calls and optional access', async () => {
+  const tree = parse(`class Base {}
+    class Target extends Base {
+      constructor(data) { super(); this.size = data.size; this.visible = data.visible;
+        this.variables = data.variables; this.runtime = function () { return this; }; }
+      toJSON() { return {size: this.size, visible: this.visible, variables: this.variables}; }
+    }
+    const data = {size: 30, visible: true, variables: {answer: 7}};
+    const target = new Target(data);
+    let calls = 0; const get = () => { calls++; return target; };
+    get().size += 5;
+    const {visible} = target;
+    const missing = null;
+    globalThis.stateResult = [target.toJSON(), data.size, new Map([[1, 2]]).size,
+      calls, visible, target.runtime() === target, missing?.size, target?.size,
+      Object.keys(target).includes('size'), Object.hasOwn(target, 'size'),
+      Object.prototype.hasOwnProperty.call(target, 'size'), 'size' in target,
+      Reflect.get(target, 'size')];`, {sourceType: 'module'});
+  const counts = rewriteTargetState(tree, 'scratch-vm/src/engine/target.js');
+  assert(counts.direct > 0 && counts.accesses > counts.direct);
+  const bundle = await rollup({input: 'entry', plugins: [{name: 'state-test',
+    resolveId(id) { return id; }, load(id) { return id === targetStateModule ? targetStateSource : generate(tree).code; }}]});
+  try {
+    const generated = (await bundle.generate({format: 'iife'})).output[0].code;
+    const linked = parse(generated);
+    const diagnostics = {};
+    renameProperties(linked, 'state-test', diagnostics, [], targetFields.map(targetProperty));
+    finalizeTargetState(linked, diagnostics.propertyMap);
+    const result = new vm.Script(generate(linked).code + '\nstateResult;').runInNewContext();
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), [
+      {size: 35, visible: true, variables: {answer: 7}}, 30, 1, 1, true, true, null, 35, false, true, true, true, 35]);
+  } finally { await bundle.close(); }
+});
 
 test('scoped thread status is renamed without changing HTTP response status', () => {
   const tree = parse(`class Thread { constructor() { this.status = 0; } }
@@ -95,6 +130,8 @@ test('aggressive core package renaming preserves motion, clones and restart', as
   const element = () => ({style: {}, appendChild() {}, insertBefore() {}, setAttribute() {}, getContext() { return null; }});
   let playerVM;
   let properties = {};
+  let scoped = {};
+  const state = (object, name) => object[scoped[`Target.${name}`] || name];
   const call = (object, name, ...args) => object[properties[name] || name](...args);
   try {
     await original.loadProject(JSON.stringify(project));
@@ -125,11 +162,12 @@ test('aggressive core package renaming preserves motion, clones and restart', as
       new vm.Script(result.code).runInThisContext();
       await globalThis.aggressiveReady; playerVM = globalThis.aggressiveVM;
       properties = result.diagnostics.propertyMap;
+      scoped = result.diagnostics.scopedProperties || {};
       for (let run = 0; run < 2; run++) {
         call(playerVM, 'greenFlag');
         for (let tick = 0; tick < 10; tick++) call(playerVM.runtime, '_step');
-        assert.equal(call(playerVM.runtime, 'getTargetForStage').variables.answer.value, 15);
-        assert.deepEqual(playerVM.runtime.targets.filter(target => !target.isStage).map(target => target.x), [10, 15]);
+        assert.equal(state(call(playerVM.runtime, 'getTargetForStage'), 'variables').answer.value, 15);
+        assert.deepEqual(playerVM.runtime.targets.filter(target => !state(target, 'isStage')).map(target => state(target, 'x')), [10, 15]);
         call(playerVM, 'stopAll');
       }
       call(playerVM, 'quit'); playerVM = null;
@@ -276,6 +314,8 @@ for (const aggressiveRenaming of [false, true]) test(`the linked pause addon sha
   const original = new VM();
   let playerVM;
   let properties = {};
+  let scoped = {};
+  const state = (object, name) => object[scoped[`Target.${name}`] || name];
   const read = (object, name) => object[properties[name] || name];
   const call = (object, name, ...args) => read(object, name).apply(object, args);
   const descriptors = {};
@@ -311,12 +351,13 @@ for (const aggressiveRenaming of [false, true]) test(`the linked pause addon sha
     new vm.Script(result.code).runInThisContext();
     await globalThis.renamedReady; playerVM = globalThis.renamedVM;
     properties = result.diagnostics.propertyMap;
+    scoped = result.diagnostics.scopedProperties || {};
     const key = result.diagnostics.propertyMap.stepThreads;
     const sequencer = read(playerVM.runtime, 'sequencer');
     assert(key && typeof sequencer[key] === 'function');
     assert.equal(sequencer.stepThreads, undefined);
     assert.notEqual(sequencer[key], Object.getPrototypeOf(sequencer)[key], 'pause hook overrides the renamed method');
-    const value = () => call(playerVM.runtime, 'getTargetForStage').variables.answer.value;
+    const value = () => state(call(playerVM.runtime, 'getTargetForStage'), 'variables').answer.value;
     call(playerVM, 'greenFlag'); call(playerVM.runtime, '_step');
     const before = value();
     assert(before > 0 && before < 100000);

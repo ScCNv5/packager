@@ -5,6 +5,7 @@ import * as t from '@babel/types';
 import {minify} from 'terser';
 import {extensionLoaderBody} from './extension-runtime.mjs';
 import {collectVMProperties, rewriteThreadStatus, threadStatusProperty, publicProperties} from './aggressive-properties.mjs';
+import {targetFields, targetProperty, targetStateModule, targetStateSource, rewriteTargetState, finalizeTargetState} from './target-state.mjs';
 
 const traverse = traverseModule.default || traverseModule;
 const generate = generateModule.default || generateModule;
@@ -842,20 +843,30 @@ export async function linkPlayer({sourcePack, program, input, boot, seed, minify
   sources[entry] = `import {Scaffolding, ScaffoldingAddons} from ${q(sourcePack.entry)};\n${boot}`;
   if (aggressiveRenaming) {
     if (!sourcePack.platformProperties?.length) throw new Error('Rebuild the runtime source pack for expanded aggressive renaming');
-    const families = /scratch-vm\/src\/(engine\/(runtime|thread|sequencer|target|variable)|sprites\/(rendered-target|sprite)|blocks\/scratch3_\w+)\.js$/;
+    const families = /scratch-vm\/src\/(engine\/(runtime|thread|sequencer|target|variable)|sprites\/(rendered-target|sprite)|blocks\/scratch3_\w+)\.js$|node_modules\/scratch-render\/src\/[^/]+\.js$/;
     diagnostics.threadStatusAccesses = 0;
+    diagnostics.targetStateAccesses = {accesses: 0, direct: 0};
     for (const id of Object.keys(sources)) {
       const origins = sourcePack.provenance[id] || [];
       const origin = origins.find(name => families.test(name));
       const statusSource = origins.find(name => /scratch-vm\/src\/engine\/(thread|sequencer|runtime|execute|block-utility)\.js$/.test(name) ||
         name.endsWith('scratch-vm/src/blocks/scratch3_procedures.js') || name.endsWith('tw-packager/src/addons/pause.js'));
-      if (!origin && !statusSource) continue;
+      const stateSource = origins.find(name => /^(scratch-vm\/src\/|tw-packager\/src\/(addons|scaffolding)\/)/.test(name)) ||
+        (id === entry ? entry : null);
+      if (!origin && !statusSource && !stateSource) continue;
       const tree = parseCode(sources[id]);
       if (origin) for (const name of collectVMProperties(tree)) aggressiveProperties.add(name);
       if (statusSource) diagnostics.threadStatusAccesses += rewriteThreadStatus(tree, statusSource);
+      if (stateSource) {
+        const counts = rewriteTargetState(tree, stateSource);
+        diagnostics.targetStateAccesses.accesses += counts.accesses;
+        diagnostics.targetStateAccesses.direct += counts.direct;
+      }
       sources[id] = print(tree);
     }
     aggressiveProperties.add(threadStatusProperty);
+    for (const name of targetFields) aggressiveProperties.add(targetProperty(name));
+    sources[targetStateModule] = targetStateSource;
   }
   const importedBy = new Map();
   const bundle = await rollup({input: entry, treeshake: {moduleSideEffects: true},
@@ -894,8 +905,10 @@ export async function linkPlayer({sourcePack, program, input, boot, seed, minify
     renameProperties(tree, seed, diagnostics, Object.keys(methods).filter(name => name !== 'stepThread'),
       [...aggressiveProperties].sort(), aggressiveRenaming ? [...sourcePack.platformProperties, ...publicProperties] : []);
     if (aggressiveRenaming) {
-      diagnostics.scopedProperties = {'Thread.status': diagnostics.propertyMap[threadStatusProperty]};
-      diagnostics.propertyBoundary = 'Expanded aggressive mode renames VM, target, sprite and core block methods and internal fields, including scoped thread status. Native APIs, SB3 state keys and public player/extension protocols retain stable names. Third-party extension compatibility is not guaranteed.';
+      diagnostics.scopedProperties = {'Thread.status': diagnostics.propertyMap[threadStatusProperty] || threadStatusProperty,
+        ...Object.fromEntries(targetFields.map(name => [`Target.${name}`, diagnostics.propertyMap[targetProperty(name)] || targetProperty(name)]))};
+      finalizeTargetState(tree, diagnostics.propertyMap);
+      diagnostics.propertyBoundary = 'Aggressive mode jointly renames VM and renderer/Drawable/Skin methods and fields. Target instance state has private keys; data loading, serialization and clones use owned-instance adapters. Native APIs, external SB3 keys and public player/extension protocols remain stable.';
     }
     const transformed = generate(tree, {comments: false, sourceMaps: wantSourceMap,
       inputSourceMap: wantSourceMap ? chunk.map : undefined, sourceFileName: 'linked-player.js'}, chunk.code);

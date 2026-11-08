@@ -15,6 +15,15 @@ const data = await bytes(fixtureProject());
 const first = await compileProject(data, {seed: 'acceptance', autoplay: false, aggressiveRenaming});
 const second = await compileProject(data, {seed: 'acceptance', autoplay: false, sourceMap: true, aggressiveRenaming});
 assert.equal(first.diagnostics.aggressiveRenaming, aggressiveRenaming);
+if (aggressiveRenaming) {
+  for (const name of ['getCurrentSkinSize', 'updateDrawableVisible', 'updateDrawableDirectionScale']) {
+    assert(first.diagnostics.propertyMap[name], `${name} must be jointly renamed with the renderer`);
+    assert(!first.code.includes(`.${name}(`));
+  }
+  for (const name of ['size', 'visible', 'isStage', 'variables', 'currentCostume', 'renderer']) {
+    assert(first.diagnostics.scopedProperties[`Target.${name}`], `${name} needs a private Target field`);
+  }
+}
 for (const name of ['ext_scratch3_looks', '_say']) {
   assert.equal(Boolean(first.diagnostics.propertyMap[name]), aggressiveRenaming, name);
 }
@@ -38,6 +47,9 @@ assert(first.diagnostics.commonJSWrappers.every(item => item.sha256.length === 6
 assert(!first.code.includes('__webpack_require__'));
 const zip = await JSZip.loadAsync(first.assets[0].data);
 const initial = JSON.parse(await zip.file('project.json').async('string'));
+assert.equal(initial.targets[0].isStage, true);
+assert.equal(initial.targets[0].currentCostume, 0);
+assert.deepEqual(initial.targets[0].variables.answer, ['answer', 0]);
 assert(initial.targets.every(target => Object.keys(target.blocks).length === 0 && Object.keys(target.comments).length === 0));
 assert.deepEqual(Object.keys(zip.files).sort(), [`${costumeId}.svg`, 'project.json'].sort());
 await fs.writeFile(new URL('player.js', out), first.code);

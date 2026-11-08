@@ -651,7 +651,7 @@
       "string": "Aggressive renaming"
     },
     "aggressiveRenamingDescription": {
-      "string": "Also rename internal runtime fields, sprite methods and core block methods. Suitable for standard Scratch projects; may break third-party extensions."
+      "string": "Also rename internal fields and methods across the runtime, sprites, core blocks and renderer. Suitable for standard Scratch projects; may break third-party extensions."
     },
     "randomBuildSeed": {
       "string": "Random for each build when empty"

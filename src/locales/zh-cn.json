@@ -150,7 +150,7 @@
         "specializedProtection": "程序专用化保护",
         "specializedProtectionDescription": "作品脚本与运行时联合编译，生成专用于此作品的离线播放器。",
         "aggressiveRenaming": "激进重命名",
-        "aggressiveRenamingDescription": "同时重命名运行时内部字段、角色方法和原版积木方法。适用于原版 Scratch 作品，可能破坏第三方扩展兼容性。",
+        "aggressiveRenamingDescription": "同时重命名运行时、角色、原版积木和渲染器的内部字段与方法。适用于原版 Scratch 作品，可能破坏第三方扩展兼容性。",
         "buildSeed": "构建 seed",
         "randomBuildSeed": "留空时每次构建随机生成"
     },

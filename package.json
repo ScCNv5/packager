@@ -14,7 +14,7 @@
     "build-node": "cross-env BUILD_MODE=node npm run build",
     "build-node-prod": "cross-env NODE_ENV=production npm run build-node",
     "test": "jest",
-    "prepublishOnly": "npm run test && npm run build-node-prod && npm run test:specialized && npm run test:specialized-linked && npm run test:specialized-aggressive && npm run test:specialized-build && npm run test:specialized-performance && node src/build/nodejs/update-readme.js node",
+    "prepublishOnly": "npm run test && npm run build-node-prod && npm run test:specialized && npm run test:specialized-linked && npm run test:specialized-aggressive && npm run test:specialized-build && npm run test:specialized-performance && npm run test:specialized-performance -- --aggressive && node src/build/nodejs/update-readme.js node",
     "postpublish": "node src/build/nodejs/update-readme.js restore",
     "prepare:specialized": "node scripts/prepare-runtime-sources.mjs && node scripts/build-linker.mjs",
     "test:specialized": "node test/specialized-differential.mjs && node --test test/specialized-lifecycle.mjs test/specialized-structure.mjs test/specialized-rendering.mjs test/specialized-properties.mjs",

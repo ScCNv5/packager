@@ -37,6 +37,7 @@ jobs:
         node test/specialized-worker-input.mjs --aggressive
         npm run test:specialized-browser
         npm run test:specialized-performance
+        npm run test:specialized-performance -- --aggressive
     - name: Build standalone
       run: npm run build-standalone-prod
     - name: Test offline standalone

@@ -13,9 +13,12 @@ const sourcePack = JSON.parse(await fs.readFile(new URL('../generated/runtime-so
 const quiet = {log() {}, warn() {}, error() {}, debug() {}, info() {}};
 const element = () => ({style: {}, appendChild() {}, insertBefore() {}, setAttribute() {}, getContext() { return null; }});
 const report = [];
+const aggressiveRenaming = process.argv.includes('--aggressive');
 
 for (const category of ['compute', 'warp-calls', 'list', 'broadcast', 'clone', 'pen']) {
-  const project = fixtureProject({iterations: category === 'compute' || category === 'list' ? 200000 : 10000});
+  // Pen's former ~1 ms samples were dominated by tiering/GC noise. Keep a
+  // longer workload for both compared VMs instead of relaxing the CPU gate.
+  const project = fixtureProject({iterations: ['compute', 'list', 'pen'].includes(category) ? 200000 : 10000});
   project.monitors = [];
   project.targets[0].costumes = [];
   delete project.targets[0].blocks.say;
@@ -80,7 +83,7 @@ for (const category of ['compute', 'warp-calls', 'list', 'broadcast', 'clone', '
   const boot = `const vm = new Scaffolding.VM(); globalThis.testVM = vm;
     vm.setCompilerOptions({enabled: true}); vm.setTurboMode(true);
     globalThis.testReady = vm.loadProject(${JSON.stringify(JSON.stringify(input.project))});`;
-  const built = await linkPlayer({sourcePack, input, program, boot, seed: 'performance'}, rollup);
+  const built = await linkPlayer({sourcePack, input, program, boot, seed: 'performance', aggressiveRenaming}, rollup);
   const buildMs = performance.now() - buildStart;
   // Run both VMs in the same JS realm. A vm.createContext proxy adds a global
   // lookup tax to every generated Math/Number operation and is not a browser.
@@ -95,11 +98,15 @@ for (const category of ['compute', 'warp-calls', 'list', 'broadcast', 'clone', '
   await context.testReady;
   const startupMs = performance.now() - start;
   const specialized = context.testVM;
+  const mappings = new WeakMap([[specialized, built.diagnostics]]);
+  const read = (vm, object, name) => object[mappings.get(vm)?.propertyMap[name] || name];
+  const state = (vm, target, name) => target[mappings.get(vm)?.scopedProperties?.[`Target.${name}`] || name];
+  const call = (vm, object, name) => read(vm, object, name).call(object);
   const measure = vm => {
-    for (const t of vm.runtime.targets) for (const variable of Object.values(t.variables)) if (variable.type === 'list') variable.value.length = 0;
+    for (const t of vm.runtime.targets) for (const variable of Object.values(state(vm, t, 'variables'))) if (variable.type === 'list') variable.value.length = 0;
     const started = performance.now();
-    vm.greenFlag();
-    while (vm.runtime.threads.some(thread => !thread.updateMonitor)) vm.runtime._step();
+    call(vm, vm, 'greenFlag');
+    while (read(vm, vm.runtime, 'threads').some(thread => !thread.updateMonitor)) call(vm, vm.runtime, '_step');
     return performance.now() - started;
   };
   const samples = {aot: [], specialized: []};
@@ -109,36 +116,37 @@ for (const category of ['compute', 'warp-calls', 'list', 'broadcast', 'clone', '
   }
   const median = array => [...array].sort((a, b) => a - b)[2];
   const slowdown = median(samples.specialized) / median(samples.aot) - 1;
-  assert.deepEqual(JSON.parse(JSON.stringify(specialized.runtime.targets.map(t => Object.values(t.variables).map(v => v.value)))),
+  assert.deepEqual(JSON.parse(JSON.stringify(specialized.runtime.targets.map(t => Object.values(state(specialized, t, 'variables')).map(v => v.value)))),
     JSON.parse(JSON.stringify(baseline.runtime.targets.map(t => Object.values(t.variables).map(v => v.value)))));
-  report.push({category, samples, medianAOT: median(samples.aot), medianSpecialized: median(samples.specialized),
+  report.push({category, aggressiveRenaming, samples, medianAOT: median(samples.aot), medianSpecialized: median(samples.specialized),
     p95AOT: Math.max(...samples.aot), p95Specialized: Math.max(...samples.specialized), slowdown, buildMs, startupMs,
     heapUsed: process.memoryUsage().heapUsed, scope: 'CPU execution; pen state update; excludes GPU rasterization'});
   console.log(category, `${(slowdown * 100).toFixed(1)}%`, JSON.stringify(samples));
   if (category === 'compute') {
-    const otherBuild = await linkPlayer({sourcePack, input, program: lower(input, 43), boot, seed: 'other-build'}, rollup);
+    const otherBuild = await linkPlayer({sourcePack, input, program: lower(input, 43), boot, seed: 'other-build', aggressiveRenaming}, rollup);
     new vmModule.Script(otherBuild.code).runInThisContext();
     await context.testReady;
     const other = context.testVM;
+    mappings.set(other, otherBuild.diagnostics);
     measure(other);
-    assert.equal(other.runtime.targets[0].variables.answer.value, specialized.runtime.targets[0].variables.answer.value,
+    assert.equal(state(other, other.runtime.targets[0], 'variables').answer.value, state(specialized, specialized.runtime.targets[0], 'variables').answer.value,
       'different seeds preserve execution');
-    const sequencer = specialized.runtime.sequencer;
+    const sequencer = read(specialized, specialized.runtime, 'sequencer');
     const stepName = built.diagnostics.propertyMap.stepThread || 'stepThread';
     const otherStepName = otherBuild.diagnostics.propertyMap.stepThread || 'stepThread';
     const original = sequencer[stepName];
     try {
-      sequencer[stepName] = other.runtime.sequencer[otherStepName];
-      specialized.greenFlag();
-      assert.throws(() => specialized.runtime._step(), 'a dispatcher from another build cannot run against this build\'s thread layout');
-    } finally { sequencer[stepName] = original; specialized.stopAll(); other.quit(); }
+      sequencer[stepName] = read(other, other.runtime, 'sequencer')[otherStepName];
+      call(specialized, specialized, 'greenFlag');
+      assert.throws(() => call(specialized, specialized.runtime, '_step'), 'a dispatcher from another build cannot run against this build\'s thread layout');
+    } finally { sequencer[stepName] = original; call(specialized, specialized, 'stopAll'); call(other, other, 'quit'); }
     report.at(-1).crossBuildDispatcherSubstitution = 'rejected';
   }
-  baseline.quit(); specialized.quit();
+  baseline.quit(); call(specialized, specialized, 'quit');
   delete context.testVM; delete context.testReady;
   for (const [key, descriptor] of Object.entries(previousGlobals)) {
     if (descriptor) Object.defineProperty(context, key, descriptor); else delete context[key];
   }
 }
-await fs.writeFile(new URL('../../work/acceptance/performance-report.json', import.meta.url), JSON.stringify(report, null, 2));
+await fs.writeFile(new URL(`../../work/acceptance/performance${aggressiveRenaming ? '-aggressive' : ''}-report.json`, import.meta.url), JSON.stringify(report, null, 2));
 assert(report.every(item => item.slowdown <= 0.1), '10% median CPU regression gate');
